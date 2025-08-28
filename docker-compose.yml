@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: ghcr.io/tensorchord/vchord-postgres:pg17-v0.4.2
+    container_name: music_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: music_library
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: music_api
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/music_library?sslmode=disable
+
+volumes:
+  postgres_data:
