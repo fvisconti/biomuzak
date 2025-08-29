@@ -10,7 +10,7 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Public routes
@@ -32,6 +32,10 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		})
 
 		r.Post("/api/upload", uploadHandler.Upload)
+
+		// Library routes
+		r.Get("/api/library", libraryHandler.GetLibraryHandler)
+		r.Post("/api/songs/{songID}/rate", libraryHandler.RateSongHandler)
 	})
 
 	return r
