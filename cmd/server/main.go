@@ -26,16 +26,17 @@ func main() {
 	defer conn.Close()
 
 	// Run migrations
-	err = db.Migrate(conn, "migrations/0001_initial_schema.up.sql")
+	err = db.Migrate(conn, "db/migrations/0001_initial_schema.sql")
 	if err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(conn, cfg)
+	uploadHandler := handlers.NewUploadHandler(conn, cfg)
 
 	// Initialize router
-	r := router.New(authHandler)
+	r := router.New(authHandler, uploadHandler)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)
