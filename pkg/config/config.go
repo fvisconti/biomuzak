@@ -10,6 +10,8 @@ import (
 // Config holds the application's configuration
 type Config struct {
 	DatabaseURL string
+	JWTSecret   string
+	Port        string
 }
 
 // New creates a new Config struct
@@ -24,6 +26,8 @@ func New() *Config {
 
 	return &Config{
 		DatabaseURL: getEnv("DATABASE_URL", ""),
+		JWTSecret:   getEnv("JWT_SECRET", "default-secret"),
+		Port:        getEnv("PORT", "8080"),
 	}
 }
 
