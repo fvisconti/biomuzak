@@ -10,7 +10,7 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Public routes
@@ -30,6 +30,8 @@ func New(authHandler *handlers.AuthHandler) *chi.Mux {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{"message": "This is a protected route", "user_id": userID})
 		})
+
+		r.Post("/api/upload", uploadHandler.Upload)
 	})
 
 	return r
