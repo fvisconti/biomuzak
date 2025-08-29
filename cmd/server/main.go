@@ -1,7 +1,11 @@
 package main
 
 import (
+	"fmt"
+	"go-postgres-example/pkg/handlers"
+	"go-postgres-example/pkg/router"
 	"log"
+	"net/http"
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
@@ -27,5 +31,15 @@ func main() {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
-	log.Println("Application started successfully")
+	// Initialize handlers
+	authHandler := handlers.NewAuthHandler(conn, cfg)
+
+	// Initialize router
+	r := router.New(authHandler)
+
+	// Start server
+	log.Printf("Server starting on port %s", cfg.Port)
+	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
+		log.Fatalf("Failed to start server: %v", err)
+	}
 }
