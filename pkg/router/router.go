@@ -10,7 +10,7 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Public routes
@@ -33,9 +33,26 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 		r.Post("/api/upload", uploadHandler.Upload)
 
-		// Library routes
+		// Library and Song routes
 		r.Get("/api/library", libraryHandler.GetLibraryHandler)
 		r.Post("/api/songs/{songID}/rate", libraryHandler.RateSongHandler)
+		r.Get("/api/songs/{songID}/similar", songHandler.GetSimilarSongsHandler)
+
+		// Playlist routes
+		r.Route("/api/playlists", func(r chi.Router) {
+			r.Post("/", playlistHandler.CreatePlaylistHandler)
+			r.Get("/", playlistHandler.GetUserPlaylistsHandler)
+
+			r.Route("/{playlistID}", func(r chi.Router) {
+				r.Get("/", playlistHandler.GetPlaylistHandler)
+				r.Put("/", playlistHandler.UpdatePlaylistHandler)
+				r.Delete("/", playlistHandler.DeletePlaylistHandler)
+
+				// Playlist songs routes
+				r.Post("/songs", playlistHandler.AddSongToPlaylistHandler)
+				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
+			})
+		})
 	})
 
 	return r
