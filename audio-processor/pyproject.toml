@@ -1,0 +1,10 @@
+[project]
+name = "audio-processor"
+version = "0.1.0"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "python-multipart",
+    "essentia",
+    "numpy",
+]
