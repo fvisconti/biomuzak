@@ -6,15 +6,16 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go-postgres-example/pkg/db"
+	"go-postgres-example/pkg/musicbrainz"
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/models"
 
 	"github.com/dhowden/tag"
-	"github.com/michiwend/gomusicbrainz"
 )
 
 // ProcessorAPI defines the interface for a metadata processor.
@@ -24,16 +25,51 @@ type ProcessorAPI interface {
 
 // Processor handles the metadata processing logic.
 type Processor struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB         *sql.DB
+	Cfg        *config.Config
+	MBClient   musicbrainz.Clienter
 }
 
 // NewProcessor creates a new Processor.
 func NewProcessor(db *sql.DB, cfg *config.Config) *Processor {
-	return &Processor{DB: db, Cfg: cfg}
+	mbClient, err := musicbrainz.NewClient(cfg)
+	if err != nil {
+		log.Fatalf("Failed to create MusicBrainz client: %v", err)
+	}
+	return &Processor{DB: db, Cfg: cfg, MBClient: mbClient}
 }
 
 // ProcessFile orchestrates the entire process for a single file.
+func (p *Processor) getGenre(song *models.Song, filePath string) (string, error) {
+	// 1. Try to get genre from MusicBrainz
+	if song.Artist != "" {
+		genres, err := p.MBClient.GetArtistGenres(song.Artist)
+		if err != nil {
+			log.Printf("Failed to get genres from MusicBrainz for artist %s: %v", song.Artist, err)
+		}
+		if len(genres) > 0 {
+			// For simplicity, we'll just take the first genre.
+			// A more sophisticated approach might involve checking all genres against our internal list.
+			return genres[0], nil
+		}
+	}
+
+	// 2. Fallback to trigram search on the parent folder name
+	parentDir := filepath.Base(filepath.Dir(filePath))
+	if parentDir != "" && parentDir != "." {
+		genre, err := db.FindGenreByTrigramSearch(p.DB, parentDir)
+		if err != nil {
+			return "", fmt.Errorf("failed to find genre by trigram search: %w", err)
+		}
+		if genre != "" {
+			return genre, nil
+		}
+	}
+
+	// 3. Fallback to the genre from the file's metadata
+	return song.Genre, nil
+}
+
 func (p *Processor) ProcessFile(filePath string) error {
 	// 1. Generate file hash
 	hash, err := generateFileHash(filePath)
@@ -60,21 +96,27 @@ func (p *Processor) ProcessFile(filePath string) error {
 	song.FilePath = filePath // This might be a temporary path. The final path should be set after moving the file.
 
 	// 4. Enrich metadata with MusicBrainz
-	if err := enrichMetadata(song, p.Cfg); err != nil {
+	if err := p.MBClient.EnrichMetadata(song); err != nil {
 		// Log the error but continue, as MusicBrainz is an enhancement, not a requirement.
 		log.Printf("Failed to enrich metadata for %s: %v", filePath, err)
 	}
 
-	// 5. Find or create genre
-	if song.Genre != "" {
-		genreID, err := p.findOrCreateGenre(song.Genre)
+	// 5. Get genre using the new logic
+	genreName, err := p.getGenre(song, filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get genre: %w", err)
+	}
+
+	// 6. Find or create genre
+	if genreName != "" {
+		genreID, err := p.findOrCreateGenre(genreName)
 		if err != nil {
 			return fmt.Errorf("failed to find or create genre: %w", err)
 		}
 		song.GenreID = sql.NullInt64{Int64: int64(genreID), Valid: true}
 	}
 
-	// 6. Save song to database
+	// 7. Save song to database
 	songID, err := p.saveSong(song)
 	if err != nil {
 		return fmt.Errorf("failed to save song %s: %w", song.Title, err)
@@ -155,41 +197,6 @@ func extractMetadata(filePath string) (*models.Song, error) {
 	}
 
 	return song, nil
-}
-
-func enrichMetadata(song *models.Song, cfg *config.Config) error {
-	if song.Artist == "" || song.Title == "" {
-		return nil // Not enough info for a lookup
-	}
-
-	client, err := gomusicbrainz.NewWS2Client("https://musicbrainz.org/ws/2", "go-music-app", "0.1", cfg.MusicBrainzEmail)
-	if err != nil {
-		return fmt.Errorf("failed to create musicbrainz client: %w", err)
-	}
-
-	// Search for releases, as they contain the album and date information.
-	query := fmt.Sprintf("release:\"%s\" AND artist:\"%s\"", song.Title, song.Artist)
-	resp, err := client.SearchRelease(query, 1, 0)
-	if err != nil {
-		return fmt.Errorf("musicbrainz search failed: %w", err)
-	}
-
-	if len(resp.Releases) > 0 {
-		release := resp.Releases[0]
-
-		// The release title is often the album title. The original song title is likely correct.
-		song.Album = release.Title
-
-		if len(release.ArtistCredit.NameCredits) > 0 {
-			song.Artist = release.ArtistCredit.NameCredits[0].Artist.Name
-		}
-
-		if !release.Date.IsZero() {
-			song.Year = release.Date.Year()
-		}
-	}
-
-	return nil
 }
 
 func (p *Processor) songExists(hash string) (bool, error) {

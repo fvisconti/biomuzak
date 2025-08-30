@@ -170,3 +170,24 @@ func GetSongFilePath(db *sql.DB, songID int) (string, error) {
 	}
 	return filePath, nil
 }
+
+// FindGenreByTrigramSearch finds the closest matching genre using trigram similarity.
+func FindGenreByTrigramSearch(db *sql.DB, genreName string) (string, error) {
+	var bestMatch string
+	// This query calculates the similarity between the input genreName and all existing genre names.
+	// It returns the name of the genre with the highest similarity, but only if the similarity is above a certain threshold (e.g., 0.3).
+	// The threshold helps to avoid bad matches for very dissimilar names.
+	query := `
+		SELECT name FROM genres WHERE similarity(name, $1) > 0.3
+		ORDER BY similarity(name, $1) DESC
+		LIMIT 1
+	`
+	err := db.QueryRow(query, genreName).Scan(&bestMatch)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // No good match found
+		}
+		return "", err
+	}
+	return bestMatch, nil
+}
