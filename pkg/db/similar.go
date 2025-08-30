@@ -66,7 +66,7 @@ func FindSimilarSongs(db *sql.DB, songIDToExclude int, queryEmbedding []float64,
 		JOIN songs s ON se.song_id = s.id
 		LEFT JOIN genres g ON s.genre_id = g.id
 		WHERE se.song_id != $2
-		ORDER BY similarity DESC
+		ORDER BY se.embedding <=> $1
 		LIMIT $3
 	`
 
