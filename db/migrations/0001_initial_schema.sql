@@ -1,5 +1,6 @@
 -- Enable the vector extension
-CREATE EXTENSION IF NOT EXISTS vector;
+-- Enable the VectorChord extension
+CREATE EXTENSION IF NOT EXISTS vchord CASCADE;
 
 -- Users Table
 CREATE TABLE users (
@@ -85,3 +86,6 @@ CREATE TRIGGER update_playlists_updated_at
 BEFORE UPDATE ON playlists
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
+
+-- Add VectorChord index for similarity search
+CREATE INDEX ON song_embeddings USING vchordrq (embedding vector_cosine_ops);
