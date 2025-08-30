@@ -35,9 +35,11 @@ func main() {
 	authHandler := handlers.NewAuthHandler(conn, cfg)
 	uploadHandler := handlers.NewUploadHandler(conn, cfg)
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
+	playlistHandler := handlers.NewPlaylistHandler(conn, cfg)
+	songHandler := handlers.NewSongHandler(conn, cfg)
 
 	// Initialize router
-	r := router.New(authHandler, uploadHandler, libraryHandler)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"go-postgres-example/pkg/db"
 	"io"
 	"log"
 	"os"
@@ -74,12 +75,39 @@ func (p *Processor) ProcessFile(filePath string) error {
 	}
 
 	// 6. Save song to database
-	if err := p.saveSong(song); err != nil {
+	songID, err := p.saveSong(song)
+	if err != nil {
 		return fmt.Errorf("failed to save song %s: %w", song.Title, err)
 	}
+	song.ID = songID
 
-	log.Printf("Successfully processed and saved song: %s - %s", song.Artist, song.Title)
+	// 7. Get and save song embedding
+	embedding, err := getEmbeddingsFromService(filePath)
+	if err != nil {
+		// Log the error but don't fail the whole process, as embedding is an enhancement.
+		log.Printf("Failed to get embedding for song ID %d: %v", songID, err)
+	} else {
+		if err := db.SaveSongEmbedding(p.DB, songID, embedding); err != nil {
+			log.Printf("Failed to save embedding for song ID %d: %v", songID, err)
+		} else {
+			log.Printf("Successfully saved embedding for song ID %d", songID)
+		}
+	}
+
+	log.Printf("Successfully processed and saved song: %s - %s (ID: %d)", song.Artist, song.Title, song.ID)
 	return nil
+}
+
+// getEmbeddingsFromService is a placeholder for calling an external embedding service.
+func getEmbeddingsFromService(filePath string) ([]float64, error) {
+	// TODO: Implement the actual call to the Essentia microservice.
+	// This will likely involve making an HTTP request to the service with the
+	// audio file and receiving the embedding vector in response.
+	log.Printf("TODO: Call external service to generate embedding for %s", filePath)
+
+	// For now, return a dummy vector of the correct dimension (512).
+	dummyEmbedding := make([]float64, 512)
+	return dummyEmbedding, nil
 }
 
 func generateFileHash(filePath string) (string, error) {
@@ -187,14 +215,16 @@ func (p *Processor) findOrCreateGenre(name string) (int, error) {
 	return genreID, nil
 }
 
-func (p *Processor) saveSong(song *models.Song) error {
+func (p *Processor) saveSong(song *models.Song) (int, error) {
 	query := `
 		INSERT INTO songs (
 			fingerprint_hash, file_path, title, artist, album, year, genre_id,
 			duration, bitrate, file_size, last_modified
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		RETURNING id
 	`
-	_, err := p.DB.Exec(
+	var songID int
+	err := p.DB.QueryRow(
 		query,
 		song.FingerprintHash,
 		song.FilePath,
@@ -207,6 +237,10 @@ func (p *Processor) saveSong(song *models.Song) error {
 		song.Bitrate,
 		song.FileSize,
 		song.LastModified,
-	)
-	return err
+	).Scan(&songID)
+
+	if err != nil {
+		return 0, err
+	}
+	return songID, nil
 }
