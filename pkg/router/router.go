@@ -4,14 +4,18 @@ import (
 	"encoding/json"
 	"go-postgres-example/pkg/handlers"
 	"go-postgres-example/pkg/middleware"
+	"go-postgres-example/pkg/subsonic"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
 	r := chi.NewRouter()
+
+	// Mount the Subsonic router
+	r.Mount("/rest", subsonic.NewRouter(authHandler, subsonicHandler))
 
 	// Public routes
 	r.Post("/register", authHandler.Register)

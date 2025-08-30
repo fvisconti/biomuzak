@@ -27,3 +27,16 @@ type Genre struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 }
+
+// Album represents an album in the database
+type Album struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Artist string `json:"artist"`
+}
+
+// Artist represents an artist in the database
+type Artist struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}

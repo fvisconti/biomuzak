@@ -11,6 +11,7 @@ import (
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/handlers"
 	"go-postgres-example/pkg/router"
+	"go-postgres-example/pkg/subsonic"
 
 	"github.com/stretchr/testify/assert"
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
@@ -36,7 +37,10 @@ func TestGetLibraryHandler(t *testing.T) {
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	uploadHandler := handlers.NewUploadHandler(db, cfg)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
-	r := router.New(authHandler, uploadHandler, libraryHandler)
+	playlistHandler := handlers.NewPlaylistHandler(db, cfg)
+	songHandler := handlers.NewSongHandler(db, cfg)
+	subsonicHandler := subsonic.NewHandler(db, cfg)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")
@@ -70,7 +74,10 @@ func TestRateSongHandler(t *testing.T) {
 	authHandler := handlers.NewAuthHandler(db, cfg)
 	uploadHandler := handlers.NewUploadHandler(db, cfg)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
-	r := router.New(authHandler, uploadHandler, libraryHandler)
+	playlistHandler := handlers.NewPlaylistHandler(db, cfg)
+	songHandler := handlers.NewSongHandler(db, cfg)
+	subsonicHandler := subsonic.NewHandler(db, cfg)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go-postgres-example/pkg/handlers"
 	"go-postgres-example/pkg/router"
+	"go-postgres-example/pkg/subsonic"
 	"log"
 	"net/http"
 
@@ -37,9 +38,10 @@ func main() {
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(conn, cfg)
 	songHandler := handlers.NewSongHandler(conn, cfg)
+	subsonicHandler := subsonic.NewHandler(conn, cfg)
 
 	// Initialize router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

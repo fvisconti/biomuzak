@@ -82,3 +82,91 @@ func RateSong(db *sql.DB, userID int, songID int, rating int) error {
 	_, err := db.Exec(query, userID, songID, rating)
 	return err
 }
+
+// GetAllArtists retrieves all artists from the database
+func GetAllArtists(db *sql.DB) ([]*models.Artist, error) {
+	rows, err := db.Query("SELECT id, name FROM artists ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var artists []*models.Artist
+	for rows.Next() {
+		var artist models.Artist
+		if err := rows.Scan(&artist.ID, &artist.Name); err != nil {
+			return nil, err
+		}
+		artists = append(artists, &artist)
+	}
+
+	return artists, nil
+}
+
+// Search performs a search for artists, albums, and songs
+func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*models.Song, error) {
+	query = "%" + query + "%"
+
+	// Search artists
+	artistRows, err := db.Query("SELECT id, name FROM artists WHERE name ILIKE $1", query)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer artistRows.Close()
+
+	var artists []*models.Artist
+	for artistRows.Next() {
+		var artist models.Artist
+		if err := artistRows.Scan(&artist.ID, &artist.Name); err != nil {
+			return nil, nil, nil, err
+		}
+		artists = append(artists, &artist)
+	}
+
+	// Search albums
+	albumRows, err := db.Query("SELECT id, name, artist FROM albums WHERE name ILIKE $1", query)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer albumRows.Close()
+
+	var albums []*models.Album
+	for albumRows.Next() {
+		var album models.Album
+		if err := albumRows.Scan(&album.ID, &album.Name, &album.Artist); err != nil {
+			return nil, nil, nil, err
+		}
+		albums = append(albums, &album)
+	}
+
+	// Search songs
+	songRows, err := db.Query("SELECT id, title, artist, album FROM songs WHERE title ILIKE $1", query)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer songRows.Close()
+
+	var songs []*models.Song
+	for songRows.Next() {
+		var song models.Song
+		if err := songRows.Scan(&song.ID, &song.Title, &song.Artist, &song.Album); err != nil {
+			return nil, nil, nil, err
+		}
+		songs = append(songs, &song)
+	}
+
+	return artists, albums, songs, nil
+}
+
+// GetSongFilePath retrieves the file path for a song by its ID
+func GetSongFilePath(db *sql.DB, songID int) (string, error) {
+	var filePath string
+	err := db.QueryRow("SELECT file_path FROM songs WHERE id = $1", songID).Scan(&filePath)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("song with ID %d not found", songID)
+		}
+		return "", err
+	}
+	return filePath, nil
+}
