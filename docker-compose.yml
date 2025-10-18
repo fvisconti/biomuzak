@@ -1,31 +1,88 @@
 services:
   postgres:
-    image: ghcr.io/tensorchord/vchord-postgres:pg17-v0.4.2
+    image: tensorchord/vchord-suite:pg17-latest
     container_name: music_db
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-musicuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-musicpass}
+      POSTGRES_DB: ${POSTGRES_DB:-musicdb}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    env_file:
-      - .env
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-musicuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - biomuzak-network
 
-  api:
+  audio-processor:
+    build:
+      context: ./audio-processor
+      dockerfile: Dockerfile
+    container_name: biomuzak_audio_processor
+    ports:
+      - "${AUDIO_PROCESSOR_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - biomuzak-network
+
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: biomuzak_api
+    container_name: biomuzak_backend
     ports:
-      - "8080:8080"
+      - "${BACKEND_PORT:-8080}:8080"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+      audio-processor:
+        condition: service_healthy
     environment:
-      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-    env_file:
-      - .env
+      - DATABASE_URL=postgres://${POSTGRES_USER:-musicuser}:${POSTGRES_PASSWORD:-musicpass}@postgres:5432/${POSTGRES_DB:-musicdb}?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-default-secret-change-in-production}
+      - PORT=8080
+      - UPLOAD_DIR=/root/uploads
+      - AUDIO_PROCESSOR_URL=http://audio-processor:8000
+    volumes:
+      - upload_data:/root/uploads
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - biomuzak-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: biomuzak_frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - biomuzak-network
 
 volumes:
   postgres_data:
+  upload_data:
+
+networks:
+  biomuzak-network:
+    driver: bridge
