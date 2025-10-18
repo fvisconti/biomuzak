@@ -18,6 +18,12 @@ dependencies = [
 [project.scripts]
 audio-processor = "audio_processor.main:main"
 
+[project.optional-dependencies]
+test = [
+  "pytest",
+  "httpx",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["tests", "test*", "tests.*"]

@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from fastapi import UploadFile
 import io
 
-from main import app, normalize, process_audio
+from audio_processor.main import app, normalize, process_audio
 
 client = TestClient(app)
 
@@ -96,7 +96,7 @@ class TestProcessAudioEndpoint:
         
         assert response.status_code == 422  # Unprocessable Entity
         
-    @patch('main.es.MonoLoader')
+    @patch('audio_processor.main.es.MonoLoader')
     def test_process_audio_processing_error(self, mock_loader_class):
         """Test handling of processing errors"""
         # Mock the loader to raise an exception
