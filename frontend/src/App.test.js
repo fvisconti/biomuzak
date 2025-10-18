@@ -1,8 +1,14 @@
-import { render, screen } from '@testing-library/react';
-import App from './App';
+// frontend/src/App.test.js
+import { render, screen, waitFor } from '@testing-library/react';
+import Library from './components/Library';
+import * as api from './api';
 
-test('renders learn react link', () => {
-  render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+// Mock the API used by Library so the component renders deterministically in tests
+jest.spyOn(api, 'getLibrary').mockResolvedValue({ data: [] });
+
+test('renders My Library header', async () => {
+  render(<Library />);
+  await waitFor(() => {
+    expect(screen.getByText(/my library/i)).toBeInTheDocument();
+  });
 });
