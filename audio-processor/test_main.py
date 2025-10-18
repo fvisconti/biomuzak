@@ -47,8 +47,8 @@ class TestProcessAudioEndpoint:
         assert response.status_code == 200
         assert response.json() == {"message": "Audio processing service is running"}
         
-    @patch('audio_processor.main.es.MonoLoader')
-    @patch('audio_processor.main.es.extractor.Extractor')
+    @patch('main.es.MonoLoader')
+    @patch('main.es.Extractor')
     def test_process_audio_success(self, mock_extractor_class, mock_loader_class):
         """Test successful audio processing"""
         # Mock the audio loader
@@ -114,8 +114,8 @@ class TestProcessAudioEndpoint:
 
 
 class TestEmbeddingDimensions:
-    @patch('audio_processor.main.es.MonoLoader')
-    @patch('audio_processor.main.es.extractor.Extractor')
+    @patch('main.es.MonoLoader')
+    @patch('main.es.Extractor')
     def test_embedding_dimensions(self, mock_extractor_class, mock_loader_class):
         """Test that the embedding has exactly 38 dimensions"""
         # Mock the audio loader
