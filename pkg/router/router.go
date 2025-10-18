@@ -6,6 +6,8 @@ import (
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/subsonic"
 	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -17,6 +19,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 	// Mount the Subsonic router
 	r.Mount("/rest", subsonic.NewRouter(authHandler, subsonicHandler))
 
+	// API routes
 	// Public routes
 	r.Post("/register", authHandler.Register)
 	r.Post("/login", authHandler.Login)
@@ -58,6 +61,26 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 			})
 		})
 	})
+
+	// Serve static files from frontend/build directory
+	staticDir := "./frontend/build"
+	if _, err := os.Stat(staticDir); err == nil {
+		// Serve static files (CSS, JS, images, etc.)
+		fileServer := http.FileServer(http.Dir(staticDir))
+		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
+			// Check if the requested file exists
+			path := filepath.Join(staticDir, r.URL.Path)
+			
+			// If the file doesn't exist or is a directory, serve index.html for SPA routing
+			if info, err := os.Stat(path); err != nil || info.IsDir() {
+				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
+				return
+			}
+			
+			// Otherwise serve the file
+			fileServer.ServeHTTP(w, r)
+		})
+	}
 
 	return r
 }
