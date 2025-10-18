@@ -18,6 +18,12 @@ dependencies = [
 [project.scripts]
 audio-processor = "audio_processor.main:main"
 
+[project.optional-dependencies]
+# Test dependencies installed by `uv pip install --system ".[test]"`
+test = [
+    "pytest",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 exclude = ["tests", "test*", "tests.*"]

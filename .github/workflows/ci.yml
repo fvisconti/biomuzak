@@ -51,7 +51,6 @@ jobs:
       run: |
         pip install uv
         uv pip install --system ".[test]"
-        pip install pytest
     
     - name: Run tests
       working-directory: ./audio-processor
