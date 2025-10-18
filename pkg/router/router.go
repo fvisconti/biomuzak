@@ -16,6 +16,12 @@ import (
 func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Health check endpoint (no auth required)
+	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	})
+
 	// Mount the Subsonic router
 	r.Mount("/rest", subsonic.NewRouter(authHandler, subsonicHandler))
 
