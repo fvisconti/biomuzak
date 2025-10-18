@@ -397,6 +397,9 @@ go test ./...
 # Run tests with coverage
 go test -cover ./...
 
+# Run tests with verbose output
+go test -v ./...
+
 # Run specific package tests
 go test ./pkg/auth -v
 go test ./pkg/handlers -v
@@ -415,6 +418,32 @@ pytest test_main.py -v
 cd frontend
 npm test
 ```
+
+### Integration Tests
+
+Run the full integration test suite to verify all components work together:
+
+```bash
+# Start all services first
+docker-compose up -d
+
+# Wait for services to be ready
+sleep 10
+
+# Run integration tests
+./test-integration.sh
+
+# Stop services
+docker-compose down
+```
+
+The integration test script tests:
+- Backend health endpoint
+- Audio processor health endpoint
+- Frontend accessibility
+- User registration and login
+- Protected API endpoint access with JWT
+- Subsonic API compatibility
 
 ## ⚙️ Configuration
 
