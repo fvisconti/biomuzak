@@ -68,3 +68,11 @@ async def process_audio(file: UploadFile = File(...)):
 @app.get("/")
 def read_root():
     return {"message": "Audio processing service is running"}
+
+def main():
+    """Entry point for running the audio processor service."""
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+if __name__ == "__main__":
+    main()
