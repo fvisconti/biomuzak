@@ -72,9 +72,12 @@ jobs:
       working-directory: ./frontend
       run: npm ci
     
-    - name: Run tests
+    - name: Run tests (verbose)
       working-directory: ./frontend
-      run: npm test -- --watchAll=false
+      run: |
+        node -v
+        npm -v
+        CI=true npm test -- --watchAll=false --runInBand --verbose
     
     - name: Build
       working-directory: ./frontend
