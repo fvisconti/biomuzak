@@ -36,7 +36,7 @@ biomuzak is a music organizer, player, and streamer application consisting of:
 2. **Error Handling**: Always check and handle errors explicitly
 3. **Database Operations**: Use the pgx library for PostgreSQL interactions
 4. **Logging**: Use the standard `log` package for logging
-5. **Module Name**: The module is named `go-postgres-example` (historical artifact)
+5. **Module Name**: The module is named `go-postgres-example` in `go.mod` and import paths (historical artifact from project template - maintained for backward compatibility)
 
 ### Code Organization
 - Place HTTP handlers in `pkg/handlers/`
