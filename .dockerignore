@@ -1,0 +1,65 @@
+# Git
+.git
+.gitignore
+.github
+
+# Documentation
+*.md
+!README.md
+
+# Development files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Go
+*.test
+*.out
+coverage.*
+*.coverprofile
+
+# Node
+node_modules
+npm-debug.log
+
+# Frontend
+frontend/build
+frontend/node_modules
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+.pytest_cache
+.coverage
+
+# Uploads (don't copy to image)
+uploads
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
