@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Integration test script for biomuzak
 # Tests the full stack: frontend, backend, database, and audio processor
 
@@ -77,7 +77,7 @@ echo ""
 
 # Test 4: User registration
 echo "Test 4: User Registration"
-USERNAME="testuser_$(date +%s)"
+USERNAME="testuser_$(date +%s)_$$"
 PASSWORD="testpass123"
 EMAIL="${USERNAME}@example.com"
 
@@ -103,7 +103,13 @@ HTTP_CODE=$(echo "$LOGIN_RESPONSE" | tail -n1)
 RESPONSE_BODY=$(echo "$LOGIN_RESPONSE" | head -n-1)
 
 if [ "$HTTP_CODE" = "200" ]; then
-    TOKEN=$(echo "$RESPONSE_BODY" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    # Try to extract token with jq if available, fallback to grep
+    if command -v jq &> /dev/null; then
+        TOKEN=$(echo "$RESPONSE_BODY" | jq -r '.token // empty')
+    else
+        TOKEN=$(echo "$RESPONSE_BODY" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
+    fi
+    
     if [ -n "$TOKEN" ]; then
         pass "User login successful (token received)"
     else
