@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from fastapi import UploadFile
 import io
 
-from main import app, normalize, process_audio
+from audio_processor.main import app, normalize, process_audio
 
 client = TestClient(app)
 
@@ -47,8 +47,8 @@ class TestProcessAudioEndpoint:
         assert response.status_code == 200
         assert response.json() == {"message": "Audio processing service is running"}
         
-    @patch('main.es.MonoLoader')
-    @patch('main.es.extractor.Extractor')
+    @patch('audio_processor.main.es.MonoLoader')
+    @patch('audio_processor.main.es.extractor.Extractor')
     def test_process_audio_success(self, mock_extractor_class, mock_loader_class):
         """Test successful audio processing"""
         # Mock the audio loader
@@ -96,7 +96,7 @@ class TestProcessAudioEndpoint:
         
         assert response.status_code == 422  # Unprocessable Entity
         
-    @patch('main.es.MonoLoader')
+    @patch('audio_processor.main.es.MonoLoader')
     def test_process_audio_processing_error(self, mock_loader_class):
         """Test handling of processing errors"""
         # Mock the loader to raise an exception
@@ -114,8 +114,8 @@ class TestProcessAudioEndpoint:
 
 
 class TestEmbeddingDimensions:
-    @patch('main.es.MonoLoader')
-    @patch('main.es.extractor.Extractor')
+    @patch('audio_processor.main.es.MonoLoader')
+    @patch('audio_processor.main.es.extractor.Extractor')
     def test_embedding_dimensions(self, mock_extractor_class, mock_loader_class):
         """Test that the embedding has exactly 38 dimensions"""
         # Mock the audio loader
