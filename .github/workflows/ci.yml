@@ -49,9 +49,9 @@ jobs:
     - name: Install dependencies
       working-directory: ./audio-processor
       run: |
-        pip install uv
-        uv pip install --system ".[test]"
-        pip install pytest
+        python -m pip install --upgrade pip setuptools wheel
+        # Install package test extras and ensure pytest and httpx are present
+        python -m pip install ".[test]" pytest httpx
     
     - name: Run tests
       working-directory: ./audio-processor
