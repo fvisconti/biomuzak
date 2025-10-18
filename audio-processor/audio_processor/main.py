@@ -31,7 +31,7 @@ async def process_audio(file: UploadFile = File(...)):
         audio = loader()
 
         # Define the features to extract
-        features_extractor = es.extractor.Extractor(
+        features_extractor = es.Extractor(
             lowlevel_spectral_contrast=True,
             lowlevel_mfcc=True,
             rhythm=True
