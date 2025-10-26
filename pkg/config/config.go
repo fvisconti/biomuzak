@@ -26,6 +26,10 @@ type Config struct {
 	Port             string
 	MusicBrainzEmail string
 
+	// Upload & Audio Processing
+	UploadDir          string
+	AudioProcessorURL  string
+
 	// Registration & bootstrap
 	AllowRegistration bool
 	AdminUsername     string
@@ -46,6 +50,9 @@ func New() *Config {
 		JWTSecret:        getEnv("JWT_SECRET", "default-secret"),
 		Port:             getEnv("PORT", "8080"),
 		MusicBrainzEmail: getEnv("MUSICBRAINZ_EMAIL", "youremail@example.com"),
+
+		UploadDir:         getEnv("UPLOAD_DIR", "./uploads"),
+		AudioProcessorURL: getEnv("AUDIO_PROCESSOR_URL", "http://localhost:8000"),
 
 		AllowRegistration: getEnv("ALLOW_REGISTRATION", "false") == "true",
 		AdminUsername:     getEnv("ADMIN_USERNAME", ""),
