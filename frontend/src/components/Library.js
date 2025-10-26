@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getLibrary } from '../api';
+import { getLibrary, getMe } from '../api';
 import PlayerBar from './PlayerBar';
 import './Library.css';
 
@@ -8,6 +8,7 @@ function Library() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [currentSong, setCurrentSong] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // Filters and sort
   const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +21,13 @@ function Library() {
     loadLibrary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genreFilter, artistFilter, yearFilter, sortBy]);
+
+  useEffect(() => {
+    // Fetch current user role once to conditionally show Admin link
+    getMe()
+      .then(({ data }) => setIsAdmin(!!data?.is_admin))
+      .catch(() => setIsAdmin(false));
+  }, []);
 
   const loadLibrary = async () => {
     setLoading(true);
@@ -69,6 +77,11 @@ function Library() {
           <button className="nav-btn" onClick={() => window.location.href = '/playlists'}>
             📋 Playlists
           </button>
+          {isAdmin && (
+            <button className="nav-btn" onClick={() => window.location.href = '/admin'}>
+              🛠️ Admin
+            </button>
+          )}
           <button className="logout-btn" onClick={() => {
             localStorage.removeItem('token');
             window.location.href = '/login';

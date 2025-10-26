@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { login } from '../api';
+import { login, getPublicConfig } from '../api';
 import './Auth.css';
 
 function Login() {
@@ -8,7 +8,18 @@ function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [allowRegistration, setAllowRegistration] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let mounted = true;
+    getPublicConfig()
+      .then(({ data }) => {
+        if (mounted) setAllowRegistration(!!data?.allow_registration);
+      })
+      .catch(() => setAllowRegistration(false));
+    return () => { mounted = false; };
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -59,9 +70,11 @@ function Login() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        <p className="auth-link">
-          Don't have an account? <Link to="/register">Register here</Link>
-        </p>
+        {allowRegistration && (
+          <p className="auth-link">
+            Don't have an account? <Link to="/register">Register here</Link>
+          </p>
+        )}
       </div>
     </div>
   );

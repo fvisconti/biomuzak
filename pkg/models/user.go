@@ -9,4 +9,5 @@ type User struct {
 	Email        string    `json:"email"`
 	PasswordHash string    `json:"-"` // Do not expose password hash
 	CreatedAt    time.Time `json:"created_at"`
+	IsAdmin      bool      `json:"is_admin"`
 }

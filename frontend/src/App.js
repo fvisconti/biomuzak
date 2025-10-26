@@ -7,6 +7,7 @@ import Upload from './components/Upload';
 import Playlists from './components/Playlists';
 import PrivateRoute from './components/PrivateRoute';
 import './App.css';
+import AdminUsers from './components/AdminUsers';
 
 function App() {
   return (
@@ -36,6 +37,14 @@ function App() {
             element={
               <PrivateRoute>
                 <Playlists />
+              </PrivateRoute>
+            } 
+          />
+          <Route 
+            path="/admin" 
+            element={
+              <PrivateRoute>
+                <AdminUsers />
               </PrivateRoute>
             } 
           />

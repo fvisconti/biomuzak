@@ -25,6 +25,16 @@ export const register = (username, email, password) =>
 export const login = (username, password) => 
   api.post('/login', { username, password });
 
+// Current user info
+export const getMe = () => api.get('/api/me');
+
+// Admin APIs
+export const adminCreateUser = (username, password, email = '') =>
+  api.post('/api/admin/users', { username, password, email });
+
+// Public config
+export const getPublicConfig = () => api.get('/api/config');
+
 // Library APIs
 export const getLibrary = (filters = {}, sortBy = '') => {
   const params = new URLSearchParams();

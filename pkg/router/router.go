@@ -16,6 +16,9 @@ import (
 func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
 	r := chi.NewRouter()
 
+	// Enable CORS for cross-origin requests from the frontend
+	r.Use(middleware.CORS())
+
 	// Health check endpoint (no auth required)
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -29,6 +32,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 	// Public routes
 	r.Post("/register", authHandler.Register)
 	r.Post("/login", authHandler.Login)
+	r.Get("/api/config", authHandler.PublicConfig)
 
 	// Protected routes
 	r.Group(func(r chi.Router) {
@@ -43,6 +47,9 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]interface{}{"message": "This is a protected route", "user_id": userID})
 		})
+
+		// Current user info
+		r.Get("/api/me", authHandler.Me)
 
 		r.Post("/api/upload", uploadHandler.Upload)
 
@@ -65,6 +72,12 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 				r.Post("/songs", playlistHandler.AddSongToPlaylistHandler)
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
+
+			// Admin-only routes
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.AdminOnly(authHandler.DB))
+				r.Post("/api/admin/users", authHandler.AdminCreateUser)
+			})
 		})
 	})
 
@@ -76,13 +89,13 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 			// Check if the requested file exists
 			path := filepath.Join(staticDir, r.URL.Path)
-			
+
 			// If the file doesn't exist or is a directory, serve index.html for SPA routing
 			if info, err := os.Stat(path); err != nil || info.IsDir() {
 				http.ServeFile(w, r, filepath.Join(staticDir, "index.html"))
 				return
 			}
-			
+
 			// Otherwise serve the file
 			fileServer.ServeHTTP(w, r)
 		})

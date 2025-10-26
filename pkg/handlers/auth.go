@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
+	"go-postgres-example/pkg/middleware"
 	"net/http"
 )
 
@@ -28,6 +29,10 @@ type RegisterRequest struct {
 
 // Register handles user registration
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
+	if !h.Cfg.AllowRegistration {
+		http.Error(w, "Registration is disabled", http.StatusForbidden)
+		return
+	}
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -99,4 +104,82 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
+}
+
+// MeResponse represents the authenticated user information
+type MeResponse struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	IsAdmin  bool   `json:"is_admin"`
+}
+
+// Me returns the current authenticated user's info
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+	var resp MeResponse
+	err := h.DB.QueryRow("SELECT id, username, COALESCE(is_admin, FALSE) FROM users WHERE id = $1", userID).Scan(&resp.ID, &resp.Username, &resp.IsAdmin)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to query user", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// PublicConfigResponse exposes non-sensitive configuration to the frontend
+type PublicConfigResponse struct {
+	AllowRegistration bool `json:"allow_registration"`
+}
+
+// PublicConfig returns public configuration flags (no auth required)
+func (h *AuthHandler) PublicConfig(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(PublicConfigResponse{AllowRegistration: h.Cfg.AllowRegistration})
+}
+
+// AdminCreateUserRequest represents the request body for admin-created users
+type AdminCreateUserRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Email    string `json:"email,omitempty"`
+	IsAdmin  bool   `json:"is_admin,omitempty"`
+}
+
+// AdminCreateUser allows an admin to create a new user
+func (h *AuthHandler) AdminCreateUser(w http.ResponseWriter, r *http.Request) {
+	var req AdminCreateUserRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		return
+	}
+	email := req.Email
+	if email == "" {
+		email = req.Username + "@local"
+	}
+	hashedPassword, err := auth.HashPassword(req.Password)
+	if err != nil {
+		http.Error(w, "Failed to hash password", http.StatusInternalServerError)
+		return
+	}
+	// Only allow setting admin flag to true by admins; the route will already be protected by admin middleware
+	isAdmin := req.IsAdmin
+	_, err = h.DB.Exec("INSERT INTO users (username, email, password_hash, is_admin) VALUES ($1, $2, $3, $4)", req.Username, email, hashedPassword, isAdmin)
+	if err != nil {
+		http.Error(w, "Failed to create user", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"message": "User created successfully"})
 }
