@@ -1,5 +1,8 @@
 # Copilot Instructions for biomuzak
 
+
+**ABSOLUTE RULE: Do not take initiative without asking for confirmation first.**
+
 ## Project Overview
 
 biomuzak is a music organizer, player, and streamer application consisting of:
@@ -125,6 +128,7 @@ biomuzak is a music organizer, player, and streamer application consisting of:
 
 ## Important Notes
 
+- Never ever start coding without sharing your plan and getting approval
 - Always validate user input before processing
 - Handle file uploads securely (validate file types, limit sizes)
 - Use prepared statements for all database queries

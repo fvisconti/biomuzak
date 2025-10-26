@@ -119,12 +119,18 @@ docker-compose up -d
 - Backend API: http://localhost:8080
 - Audio Processor: http://localhost:8000
 
-5. **Create your first user**:
-```bash
-curl -X POST http://localhost:8080/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","email":"admin@example.com","password":"your-secure-password"}'
+5. **Bootstrap the initial admin user**:
+
+Edit `.env` and set these variables before the first start (when the database is empty):
+
 ```
+ALLOW_REGISTRATION=false
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your-secure-password
+ADMIN_EMAIL=admin@example.com
+```
+
+On first startup, the backend will create the admin account and disable public registration. Log in via the web UI with the admin credentials.
 
 6. **Stop the services**:
 ```bash
@@ -236,7 +242,7 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 
 ### Authentication Endpoints
 
-#### Register User
+#### Register User (may be disabled)
 ```http
 POST /register
 Content-Type: application/json
@@ -246,6 +252,9 @@ Content-Type: application/json
   "email": "user@example.com",
   "password": "secure-password"
 }
+
+Notes:
+- Returns 403 Forbidden when `ALLOW_REGISTRATION=false` (default). Use the admin endpoint to invite users instead.
 ```
 
 #### Login
@@ -261,6 +270,37 @@ Content-Type: application/json
 Response:
 {
   "token": "jwt-token-here"
+}
+```
+
+#### Current User
+```http
+GET /api/me
+Authorization: Bearer <token>
+
+Response:
+{
+  "id": 1,
+  "username": "admin",
+  "is_admin": true
+}
+```
+
+#### Admin: Create User
+```http
+POST /api/admin/users
+Authorization: Bearer <token> (admin only)
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "password": "secure-password",
+  "email": "newuser@example.com"  // optional; defaults to username@local
+}
+
+Response: 201 Created
+{
+  "message": "User created successfully"
 }
 ```
 
@@ -459,6 +499,8 @@ Configuration is managed through environment variables. See `.env.example` for a
 
 - `UPLOAD_DIR`: Directory for uploaded audio files (default: ./uploads)
 - `AUDIO_PROCESSOR_URL`: URL of the audio processor service (default: http://localhost:8000)
+- `ALLOW_REGISTRATION`: Enables public registration endpoint when `true` (default: `false`)
+- `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`: Used once to bootstrap the first admin user if the users table is empty
 - `POSTGRES_USER`: PostgreSQL username (for Docker)
 - `POSTGRES_PASSWORD`: PostgreSQL password (for Docker)
 - `POSTGRES_DB`: PostgreSQL database name (for Docker)

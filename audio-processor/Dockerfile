@@ -1,23 +1,44 @@
-# Use an official Python runtime as a parent image
-FROM python:3.12-slim
+FROM python:3.11-slim
 
-# Set the working directory in the container
+ENV POETRY_VERSION=2.0.1 \
+	POETRY_VIRTUALENVS_CREATE=false \
+	PIP_NO_CACHE_DIR=1
+
 WORKDIR /app
 
-# Install uv
-RUN pip install uv
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		build-essential \
+		cmake \
+		pkg-config \
+		curl \
+		ca-certificates \
+		git \
+		libfftw3-dev \
+		libsamplerate0-dev \
+		libyaml-dev \
+		libtag1-dev \
+		libavcodec-dev \
+		libavformat-dev \
+		libavutil-dev \
+		zlib1g-dev \
+		libchromaprint-dev \
+		libeigen3-dev \
+	&& rm -rf /var/lib/apt/lists/*
 
-# Copy the pyproject.toml file into the container at /app
-COPY pyproject.toml .
+# Install Poetry
+RUN pip install "poetry==${POETRY_VERSION}"
 
-# Install any needed packages specified in pyproject.toml
-RUN uv pip install --system --no-cache-dir .
+# Copy dependency definitions first for better Docker caching
+COPY pyproject.toml ./
+# If you later add a poetry.lock it will be used for deterministic builds
+# COPY poetry.lock ./
 
-# Copy the rest of the application's code
+# Install dependencies (no project code yet)
+RUN poetry install --no-interaction --no-ansi --only main --no-root
+
+# Copy the rest of the source code
 COPY . .
 
-# Expose the port the app runs on
 EXPOSE 8000
 
-# Run the application
-CMD ["uvicorn", "audio_processor.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["poetry", "run", "uvicorn", "audio_processor.main:app", "--host", "0.0.0.0", "--port", "8000"]

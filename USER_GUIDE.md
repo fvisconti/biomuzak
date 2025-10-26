@@ -54,21 +54,34 @@ See the [Development Setup](README.md#development-setup) section in the main REA
 
 ## Getting Started
 
-### Creating Your Account
+### Getting Access
 
-1. Open biomuzak in your web browser (http://localhost:3000)
-2. Click **Register** or **Sign Up**
-3. Enter your details:
-   - Username
-   - Email address
-   - Password
-4. Click **Create Account**
+biomuzak supports two onboarding modes:
+
+1. **Invite-only (default)**
+   - Public registration is disabled by default.
+   - An administrator creates user accounts from the Admin page.
+   - Ask your administrator for your username and password.
+
+2. **Public registration (optional)**
+   - If enabled by the server (`ALLOW_REGISTRATION=true`), a Register page is available.
+   - You can create your own account by providing username, email, and password.
 
 ### Logging In
 
 1. Enter your username and password
 2. Click **Login**
 3. You'll be taken to your music library
+
+### Admin: Inviting Users
+
+If you are an administrator:
+
+1. Login with your admin account
+2. Open the Admin page (link in the Library header)
+3. Create new users by entering a username and password
+   - Passwords are securely hashed on the server
+   - Email is optional and defaults to `username@local` if omitted
 
 ## Uploading Music
 

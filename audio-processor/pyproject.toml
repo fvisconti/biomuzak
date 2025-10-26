@@ -1,23 +1,28 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "audio-processor"
 version = "0.1.0"
 description = "Audio processing service using Essentia for feature extraction"
-requires-python = ">=3.8"
+authors = [
+	{ name = "biomuzak", email = "devnull@example.com" }
+]
+readme = "README.md"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "fastapi",
-    "uvicorn",
-    "python-multipart",
-    "essentia",
-    "numpy",
+	"fastapi",
+	"uvicorn",
+	"python-multipart",
+	"numpy",
+	"essentia",
 ]
 
-[project.scripts]
-audio-processor = "audio_processor.main:main"
+[tool.poetry]
 
-[tool.setuptools.packages.find]
-where = ["."]
-exclude = ["tests", "test*", "tests.*"]
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.5"
+httpx = "^0.28.1"
+pytest-asyncio = "^0.26.0"
+ruff = "^0.12.12"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

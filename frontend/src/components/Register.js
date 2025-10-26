@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { register } from '../api';
+import { register, getPublicConfig } from '../api';
 import './Auth.css';
 
 function Register() {
@@ -10,7 +10,23 @@ function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [allowed, setAllowed] = useState(true);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    let mounted = true;
+    getPublicConfig()
+      .then(({ data }) => {
+        const ar = !!data?.allow_registration;
+        if (mounted) setAllowed(ar);
+        if (!ar) navigate('/login', { replace: true });
+      })
+      .catch(() => {
+        setAllowed(false);
+        navigate('/login', { replace: true });
+      });
+    return () => { mounted = false; };
+  }, [navigate]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -32,6 +48,8 @@ function Register() {
       setLoading(false);
     }
   };
+
+  if (!allowed) return null;
 
   return (
     <div className="auth-container">
