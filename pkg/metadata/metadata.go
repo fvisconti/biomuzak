@@ -1,14 +1,18 @@
 package metadata
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/musicbrainz"
 	"io"
 	"log"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 
@@ -93,21 +97,27 @@ func (p *Processor) ProcessFile(filePath string) error {
 		return fmt.Errorf("failed to extract metadata from %s: %w", filePath, err)
 	}
 	song.FingerprintHash = hash
-	song.FilePath = filePath // This might be a temporary path. The final path should be set after moving the file.
 
-	// 4. Enrich metadata with MusicBrainz
+	// 4. Move file to permanent storage location
+	permanentPath, err := p.moveToUploadDir(filePath, hash)
+	if err != nil {
+		return fmt.Errorf("failed to move file to upload directory: %w", err)
+	}
+	song.FilePath = permanentPath
+
+	// 5. Enrich metadata with MusicBrainz
 	if err := p.MBClient.EnrichMetadata(song); err != nil {
 		// Log the error but continue, as MusicBrainz is an enhancement, not a requirement.
 		log.Printf("Failed to enrich metadata for %s: %v", filePath, err)
 	}
 
-	// 5. Get genre using the new logic
+	// 6. Get genre using the new logic
 	genreName, err := p.getGenre(song, filePath)
 	if err != nil {
 		return fmt.Errorf("failed to get genre: %w", err)
 	}
 
-	// 6. Find or create genre
+	// 7. Find or create genre
 	if genreName != "" {
 		genreID, err := p.findOrCreateGenre(genreName)
 		if err != nil {
@@ -116,15 +126,15 @@ func (p *Processor) ProcessFile(filePath string) error {
 		song.GenreID = sql.NullInt64{Int64: int64(genreID), Valid: true}
 	}
 
-	// 7. Save song to database
+	// 8. Save song to database
 	songID, err := p.saveSong(song)
 	if err != nil {
 		return fmt.Errorf("failed to save song %s: %w", song.Title, err)
 	}
 	song.ID = songID
 
-	// 7. Get and save song embedding
-	embedding, err := getEmbeddingsFromService(filePath)
+	// 9. Get and save song embedding (using the original temp file path)
+	embedding, err := p.getEmbeddingsFromService(filePath)
 	if err != nil {
 		// Log the error but don't fail the whole process, as embedding is an enhancement.
 		log.Printf("Failed to get embedding for song ID %d: %v", songID, err)
@@ -140,16 +150,104 @@ func (p *Processor) ProcessFile(filePath string) error {
 	return nil
 }
 
-// getEmbeddingsFromService is a placeholder for calling an external embedding service.
-func getEmbeddingsFromService(filePath string) ([]float64, error) {
-	// TODO: Implement the actual call to the Essentia microservice.
-	// This will likely involve making an HTTP request to the service with the
-	// audio file and receiving the embedding vector in response.
-	log.Printf("TODO: Call external service to generate embedding for %s", filePath)
+// getEmbeddingsFromService calls the audio processor microservice to generate embeddings.
+func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error) {
+	// Open the audio file
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
 
-	// For now, return a dummy vector of the correct dimension (512).
-	dummyEmbedding := make([]float64, 512)
-	return dummyEmbedding, nil
+	// Create a multipart form body
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	
+	// Create the file part
+	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create form file: %w", err)
+	}
+	
+	// Copy file content to the form
+	if _, err := io.Copy(part, file); err != nil {
+		return nil, fmt.Errorf("failed to copy file content: %w", err)
+	}
+	
+	// Close the multipart writer
+	if err := writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// Create the HTTP request
+	url := p.Cfg.AudioProcessorURL + "/process-audio/"
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	// Send the request
+	log.Printf("Calling audio processor at %s for file %s", url, filePath)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request to audio processor: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Check response status
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("audio processor returned status %d: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	// Parse the JSON response
+	var result struct {
+		Embedding []float64 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	log.Printf("Successfully received embedding of dimension %d from audio processor", len(result.Embedding))
+	return result.Embedding, nil
+}
+
+// moveToUploadDir moves a file from temporary location to the permanent upload directory.
+// Files are organized by hash to prevent collisions and make deduplication easier.
+func (p *Processor) moveToUploadDir(tempPath string, hash string) (string, error) {
+	// Create upload directory if it doesn't exist
+	if err := os.MkdirAll(p.Cfg.UploadDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create upload directory: %w", err)
+	}
+
+	// Use the file extension from the original file
+	ext := filepath.Ext(tempPath)
+	
+	// Create the permanent filename based on hash to ensure uniqueness
+	permanentFilename := hash + ext
+	permanentPath := filepath.Join(p.Cfg.UploadDir, permanentFilename)
+
+	// Copy the file to permanent location
+	sourceFile, err := os.Open(tempPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(permanentPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create destination file: %w", err)
+	}
+	defer destFile.Close()
+
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return "", fmt.Errorf("failed to copy file: %w", err)
+	}
+
+	log.Printf("Moved file from %s to permanent location: %s", tempPath, permanentPath)
+	return permanentPath, nil
 }
 
 func generateFileHash(filePath string) (string, error) {

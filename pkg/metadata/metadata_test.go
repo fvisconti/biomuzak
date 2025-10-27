@@ -1,6 +1,11 @@
 package metadata
 
 import (
+	"encoding/json"
+	"go-postgres-example/pkg/config"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,5 +32,156 @@ func TestGenerateFileHash(t *testing.T) {
 
 	if hash != expectedHash {
 		t.Errorf("generateFileHash() hash mismatch: got %q, want %q", hash, expectedHash)
+	}
+}
+
+func TestMoveToUploadDir(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	uploadDir := filepath.Join(tempDir, "uploads")
+
+	// Create a test file
+	testFile := filepath.Join(tempDir, "test.mp3")
+	testContent := []byte("fake mp3 content for testing")
+	if err := os.WriteFile(testFile, testContent, 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create a processor with test config
+	cfg := &config.Config{
+		UploadDir: uploadDir,
+	}
+	p := &Processor{Cfg: cfg}
+
+	// Test moving the file
+	testHash := "testhash123"
+	permanentPath, err := p.moveToUploadDir(testFile, testHash)
+	if err != nil {
+		t.Fatalf("moveToUploadDir() returned error: %v", err)
+	}
+
+	// Verify the permanent path is correct
+	expectedPath := filepath.Join(uploadDir, testHash+".mp3")
+	if permanentPath != expectedPath {
+		t.Errorf("moveToUploadDir() returned path %q, want %q", permanentPath, expectedPath)
+	}
+
+	// Verify the file exists at the new location
+	if _, err := os.Stat(permanentPath); os.IsNotExist(err) {
+		t.Errorf("File was not moved to permanent location: %v", err)
+	}
+
+	// Verify the file content is correct
+	movedContent, err := os.ReadFile(permanentPath)
+	if err != nil {
+		t.Fatalf("Failed to read moved file: %v", err)
+	}
+	if string(movedContent) != string(testContent) {
+		t.Errorf("Moved file content mismatch: got %q, want %q", movedContent, testContent)
+	}
+}
+
+func TestGetEmbeddingsFromService(t *testing.T) {
+	// Create a mock audio processor server
+	mockEmbedding := []float64{0.1, 0.2, 0.3, 0.4, 0.5}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify it's a POST request
+		if r.Method != "POST" {
+			t.Errorf("Expected POST request, got %s", r.Method)
+		}
+
+		// Verify the path
+		if r.URL.Path != "/process-audio/" {
+			t.Errorf("Expected path /process-audio/, got %s", r.URL.Path)
+		}
+
+		// Return a mock embedding
+		response := map[string]interface{}{
+			"embedding": mockEmbedding,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer server.Close()
+
+	// Create a test file
+	tempDir := t.TempDir()
+	testFile := filepath.Join(tempDir, "test.mp3")
+	if err := os.WriteFile(testFile, []byte("fake audio data"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	// Create a processor with test config
+	cfg := &config.Config{
+		AudioProcessorURL: server.URL,
+	}
+	p := &Processor{Cfg: cfg}
+
+	// Test getting embeddings
+	embedding, err := p.getEmbeddingsFromService(testFile)
+	if err != nil {
+		t.Fatalf("getEmbeddingsFromService() returned error: %v", err)
+	}
+
+	// Verify the embedding matches
+	if len(embedding) != len(mockEmbedding) {
+		t.Errorf("Embedding length mismatch: got %d, want %d", len(embedding), len(mockEmbedding))
+	}
+
+	for i := range embedding {
+		if embedding[i] != mockEmbedding[i] {
+			t.Errorf("Embedding[%d] mismatch: got %f, want %f", i, embedding[i], mockEmbedding[i])
+		}
+	}
+}
+
+func TestGetEmbeddingsFromService_ErrorHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		serverFunc  http.HandlerFunc
+		expectError bool
+	}{
+		{
+			name: "server returns error status",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(w, "internal error")
+			},
+			expectError: true,
+		},
+		{
+			name: "server returns invalid JSON",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				io.WriteString(w, "not json")
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.serverFunc)
+			defer server.Close()
+
+			tempDir := t.TempDir()
+			testFile := filepath.Join(tempDir, "test.mp3")
+			if err := os.WriteFile(testFile, []byte("fake audio data"), 0644); err != nil {
+				t.Fatalf("Failed to create test file: %v", err)
+			}
+
+			cfg := &config.Config{
+				AudioProcessorURL: server.URL,
+			}
+			p := &Processor{Cfg: cfg}
+
+			_, err := p.getEmbeddingsFromService(testFile)
+			if tt.expectError && err == nil {
+				t.Errorf("Expected error but got none")
+			}
+			if !tt.expectError && err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+		})
 	}
 }
