@@ -140,9 +140,10 @@ while read -r SUBDIR; do
     # -a: archive mode (recursive, preserves owner, group, permissions, times)
     # -v: verbose
     # -z: compress
+    # --ignore-existing: skip updating files that exist on receiver
     # -E: Removed because it causes "unknown option" on non-macOS remotes.
     
-    rsync -e "$RSYNC_SSH" -avz "$SRC_FULL" "$DST_FULL"
+    rsync -e "$RSYNC_SSH" -avz --ignore-existing "$SRC_FULL" "$DST_FULL"
 
 done <<< "$MATCHING_SUBDIRS"
 
