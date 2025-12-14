@@ -30,8 +30,8 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 	// API routes
 	// Public routes
-	r.Post("/register", authHandler.Register)
-	r.Post("/login", authHandler.Login)
+	r.Post("/api/auth/register", authHandler.Register)
+	r.Post("/api/auth/login", authHandler.Login)
 	r.Get("/api/config", authHandler.PublicConfig)
 
 	// Protected routes
@@ -49,7 +49,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		})
 
 		// Current user info
-		r.Get("/api/me", authHandler.Me)
+		r.Get("/api/auth/me", authHandler.Me)
 
 		r.Post("/api/upload", uploadHandler.Upload)
 

@@ -3,6 +3,12 @@
 
 SHELL := /bin/bash
 
+# Load .env if it exists
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 DOCKER_COMPOSE := docker compose
 
 # Aggregate service list for logs convenience
@@ -71,8 +77,8 @@ open: url
 
 # Print the app URL
 url:
-	@echo "App: http://localhost:$(FRONTEND_PORT)"
-	@echo "API: http://localhost:$(BACKEND_PORT)"
+	@echo "App: http://localhost:$${FRONTEND_PORT:-3000}"
+	@echo "API: http://localhost:$${BACKEND_PORT:-8080}"
 
 # Open a psql shell inside the Postgres container
 # Relies on docker-compose container_name: music_db
