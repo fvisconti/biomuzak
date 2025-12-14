@@ -90,3 +90,62 @@ func (h *LibraryHandler) RateSongHandler(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Song rated successfully"})
 }
+
+// DeleteSongHandler removes a song from the user's library
+func (h *LibraryHandler) DeleteSongHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
+	songIDStr := chi.URLParam(r, "songID")
+	songID, err := strconv.Atoi(songIDStr)
+	if err != nil {
+		http.Error(w, "Invalid song ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.DeleteUserSong(h.DB, userID, songID); err != nil {
+		http.Error(w, "Failed to delete song", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Song deleted successfully"})
+}
+
+// UpdateGenreRequest represents the request body for updating a song's genre
+type UpdateGenreRequest struct {
+	Genre string `json:"genre"`
+}
+
+// UpdateSongGenreHandler updates the genre of a song
+func (h *LibraryHandler) UpdateSongGenreHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
+	songIDStr := chi.URLParam(r, "songID")
+	songID, err := strconv.Atoi(songIDStr)
+	if err != nil {
+		http.Error(w, "Invalid song ID", http.StatusBadRequest)
+		return
+	}
+
+	var req UpdateGenreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := db.UpdateSongGenre(h.DB, userID, songID, req.Genre); err != nil {
+		http.Error(w, "Failed to update genre", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Genre updated successfully"})
+}

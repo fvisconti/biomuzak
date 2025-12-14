@@ -21,6 +21,9 @@ const theme = extendTheme({
     brand: {
       50: '#e3f2fd',
       100: '#bbdefb',
+      400: '#42a5f5', // Added for icon color
+      500: '#2196f3', // Added for button default
+      600: '#1e88e5', // Added for button hover
       900: '#0d47a1',
     },
     gray: {

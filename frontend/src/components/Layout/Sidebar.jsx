@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, VStack, Link, Icon, Text, Divider } from '@chakra-ui/react';
-import { FiHome, FiMusic, FiList, FiDisc, FiRadio } from 'react-icons/fi';
+import { FiHome, FiMusic, FiList, FiDisc, FiRadio, FiUploadCloud } from 'react-icons/fi';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 
 const NavItem = ({ icon, children, to }) => {
@@ -62,7 +62,7 @@ const Sidebar = () => {
                     Your Collection
                 </Text>
                 <NavItem icon={FiList} to="/playlists">Playlists</NavItem>
-                <NavItem icon={FiDisc} to="/albums">Albums</NavItem>
+                <NavItem icon={FiUploadCloud} to="/upload">Upload</NavItem>
             </VStack>
         </Box>
     );

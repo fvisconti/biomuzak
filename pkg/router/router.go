@@ -13,7 +13,7 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Enable CORS for cross-origin requests from the frontend
@@ -56,7 +56,10 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		// Library and Song routes
 		r.Get("/api/library", libraryHandler.GetLibraryHandler)
 		r.Post("/api/songs/{songID}/rate", libraryHandler.RateSongHandler)
+		r.Delete("/api/songs/{songID}", libraryHandler.DeleteSongHandler)
+		r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
 		r.Get("/api/songs/{songID}/similar", songHandler.GetSimilarSongsHandler)
+		r.Get("/api/songs/{songID}/stream", streamHandler.StreamSongHandler)
 
 		// Playlist routes
 		r.Route("/api/playlists", func(r chi.Router) {

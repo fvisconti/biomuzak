@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/metadata"
+	"go-postgres-example/pkg/middleware"
+	"go-postgres-example/pkg/storage"
 	"io"
 	"log"
 	"mime/multipart"
@@ -16,13 +18,14 @@ import (
 
 // UploadHandler holds the dependencies for the upload handlers
 type UploadHandler struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB      *sql.DB
+	Cfg     *config.Config
+	Storage storage.StorageService
 }
 
 // NewUploadHandler creates a new UploadHandler
-func NewUploadHandler(db *sql.DB, cfg *config.Config) *UploadHandler {
-	return &UploadHandler{DB: db, Cfg: cfg}
+func NewUploadHandler(db *sql.DB, cfg *config.Config, storage storage.StorageService) *UploadHandler {
+	return &UploadHandler{DB: db, Cfg: cfg, Storage: storage}
 }
 
 // Upload handles file uploads and starts the processing.
@@ -37,6 +40,21 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	files := r.MultipartForm.File["files"]
 	if len(files) == 0 {
 		http.Error(w, "No files were uploaded", http.StatusBadRequest)
+		return
+	}
+
+	// Parse optional playlist ID
+	var playlistID int
+	if playlistIDStr := r.MultipartForm.Value["playlist_id"]; len(playlistIDStr) > 0 {
+		fmt.Sscanf(playlistIDStr[0], "%d", &playlistID)
+	}
+
+	// Get UserID from context (set by auth middleware)
+	// We need to import the middleware package
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		// Should have been caught by middleware, but safe fallback
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -59,10 +77,10 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create a new metadata processor
-	processor := metadata.NewProcessor(h.DB, h.Cfg)
+	processor := metadata.NewProcessor(h.DB, h.Cfg, h.Storage)
 
 	// Run the processing in a background goroutine
-	go h.processDirectory(tempDir, processor)
+	go h.processDirectory(tempDir, processor, userID, playlistID)
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprintf(w, "Successfully uploaded %d files. Processing has started in the background.", len(files))
@@ -92,7 +110,7 @@ func saveUploadedFile(fileHeader *multipart.FileHeader, destDir string) error {
 }
 
 // processDirectory walks through the given directory and processes all supported audio files.
-func (h *UploadHandler) processDirectory(dir string, processor metadata.ProcessorAPI) {
+func (h *UploadHandler) processDirectory(dir string, processor metadata.ProcessorAPI, userID int, playlistID int) {
 	log.Printf("Starting to process directory: %s", dir)
 
 	defer func() {
@@ -110,7 +128,7 @@ func (h *UploadHandler) processDirectory(dir string, processor metadata.Processo
 
 		if isSupportedAudioFile(path) {
 			log.Printf("Found supported audio file: %s", path)
-			if err := processor.ProcessFile(path); err != nil {
+			if err := processor.ProcessFile(path, userID, playlistID); err != nil {
 				log.Printf("Error processing file %s: %v", path, err)
 			}
 		} else {

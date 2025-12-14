@@ -14,8 +14,10 @@ def normalize(v):
 
 @app.post("/process-audio/")
 async def process_audio(file: UploadFile = File(...)):
-    if not file.content_type.startswith("audio/"):
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+    # Relaxed check to support various browser upload types
+    if not (file.content_type.startswith("audio/") or file.content_type == "application/octet-stream"):
+        pass # Allow it to proceed and let Essentia fail if it's invalid, or log warning
+        # raise HTTPException(status_code=400, detail=f"Unsupported file type: {file.content_type}")
 
     try:
         # Read audio file content
@@ -30,34 +32,51 @@ async def process_audio(file: UploadFile = File(...)):
         loader = es.MonoLoader(filename="temp_audio_file")
         audio = loader()
 
-        # Define the features to extract
-        features_extractor = es.Extractor(
-            lowlevel_spectral_contrast=True,
-            lowlevel_mfcc=True,
-            rhythm=True
-        )
+        # Use specific extractors to avoid parameter naming issues
+        # MFCC
+        w_hann = es.Windowing(type='hann')
+        spectrum = es.Spectrum()
+        mfcc_algo = es.MFCC()
+        
+        mfccs = []
+        # Frame-wise processing usually required, but let's see if we can use on whole audio?
+        # es.MFCC expects spectrum.
+        # Let's use the MusicExtractor for high-level if available, OR simple frame loop.
+        
+        # Simpler approach: FrameGenerator
+        for frame in es.FrameGenerator(audio, frameSize=1024, hopSize=512, startFromZero=True):
+            spec = spectrum(w_hann(frame))
+            mfcc_bands, mfcc_coeffs = mfcc_algo(spec)
+            mfccs.append(mfcc_coeffs)
+            
+        mfccs = np.array(mfccs)
+        mfcc_mean = np.mean(mfccs, axis=0)
+        mfcc_std = np.std(mfccs, axis=0)
 
-        # Extract features
-        features, features_frames = features_extractor(audio)
+        # Spectral Contrast
+        sc_algo = es.SpectralContrast()
+        scs = []
+        for frame in es.FrameGenerator(audio, frameSize=1024, hopSize=512, startFromZero=True):
+             spec = spectrum(w_hann(frame))
+             sc_val, sc_valley = sc_algo(spec)
+             scs.append(sc_val)
+             
+        scs = np.array(scs)
+        scontrast_mean = np.mean(scs, axis=0)
+        scontrast_std = np.std(scs, axis=0)
 
-        # Aggregate features
-        mfcc_mean = np.mean(features_frames['lowlevel.mfcc'], axis=0)
-        mfcc_std = np.std(features_frames['lowlevel.mfcc'], axis=0)
-        scontrast_mean = np.mean(features_frames['lowlevel.spectral_contrast'], axis=0)
-        scontrast_std = np.std(features_frames['lowlevel.spectral_contrast'], axis=0)
-
-        # Normalize each feature component to a 0-1 range
+        # Normalize
         mfcc_mean_norm = normalize(mfcc_mean)
         mfcc_std_norm = normalize(mfcc_std)
         scontrast_mean_norm = normalize(scontrast_mean)
         scontrast_std_norm = normalize(scontrast_std)
 
-        # Concatenate all normalized features into a single vector (38 dimensions)
+        # Flatten and concatenate
         embedding = np.concatenate([
-            mfcc_mean_norm,
-            mfcc_std_norm,
-            scontrast_mean_norm,
-            scontrast_std_norm,
+            mfcc_mean_norm.flatten(),
+            mfcc_std_norm.flatten(),
+            scontrast_mean_norm.flatten(),
+            scontrast_std_norm.flatten(),
         ]).tolist()
 
         return JSONResponse(content={"embedding": embedding})

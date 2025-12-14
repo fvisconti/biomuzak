@@ -12,6 +12,7 @@ import (
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
+	"go-postgres-example/pkg/storage"
 )
 
 func main() {
@@ -27,6 +28,18 @@ func main() {
 		log.Fatalf("Failed to connect to the database: %v", err)
 	}
 	defer conn.Close()
+
+	// Initialize storage
+	minioStorage, err := storage.NewMinIOStorage(
+		cfg.MinIOEndpoint,
+		cfg.MinIOAccessKey,
+		cfg.MinIOSecretKey,
+		cfg.MinIOBucket,
+		cfg.MinIOUseSSL,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
+	}
 
 	// Run migrations
 	exists, terr := tableExists(conn, "users")
@@ -54,14 +67,17 @@ func main() {
 
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(conn, cfg)
-	uploadHandler := handlers.NewUploadHandler(conn, cfg)
+	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(conn, cfg)
 	songHandler := handlers.NewSongHandler(conn, cfg)
-	subsonicHandler := subsonic.NewHandler(conn, cfg)
+	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
 
-	// Initialize router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
+	// Initialize the Subsonic handler
+	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)
+
+	// Initialize the router
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
 
 	// Start server
 	log.Printf("Server starting on port %s", cfg.Port)

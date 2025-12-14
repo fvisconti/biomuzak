@@ -13,8 +13,8 @@ import (
 	"go-postgres-example/pkg/router"
 	"go-postgres-example/pkg/subsonic"
 
-	"github.com/stretchr/testify/assert"
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGetLibraryHandler(t *testing.T) {
@@ -35,12 +35,13 @@ func TestGetLibraryHandler(t *testing.T) {
 	// Create a new router
 	cfg := &config.Config{JWTSecret: "default-secret"}
 	authHandler := handlers.NewAuthHandler(db, cfg)
-	uploadHandler := handlers.NewUploadHandler(db, cfg)
+	uploadHandler := handlers.NewUploadHandler(db, cfg, nil)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(db, cfg)
 	songHandler := handlers.NewSongHandler(db, cfg)
-	subsonicHandler := subsonic.NewHandler(db, cfg)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
+	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
+	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")
@@ -72,12 +73,13 @@ func TestRateSongHandler(t *testing.T) {
 	// Create a new router
 	cfg := &config.Config{JWTSecret: "default-secret"}
 	authHandler := handlers.NewAuthHandler(db, cfg)
-	uploadHandler := handlers.NewUploadHandler(db, cfg)
+	uploadHandler := handlers.NewUploadHandler(db, cfg, nil)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(db, cfg)
 	songHandler := handlers.NewSongHandler(db, cfg)
-	subsonicHandler := subsonic.NewHandler(db, cfg)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
+	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
+	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")

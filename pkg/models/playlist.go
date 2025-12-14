@@ -11,6 +11,7 @@ type Playlist struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	SongCount int       `json:"song_count"`
 }
 
 // PlaylistSong represents a song in a playlist, with its position.

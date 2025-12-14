@@ -22,3 +22,11 @@ type LibrarySong struct {
 	LastModified    time.Time     `json:"last_modified"`
 	Rating          sql.NullInt64 `json:"rating"`
 }
+
+// VirtualAlbum represents an album grouped from songs
+type VirtualAlbum struct {
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SongCount int    `json:"song_count"`
+	Year      int    `json:"year,omitempty"`
+}

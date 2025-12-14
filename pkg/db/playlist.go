@@ -29,10 +29,12 @@ func CreatePlaylist(db *sql.DB, userID int, name string) (*models.Playlist, erro
 // GetUserPlaylists retrieves all playlists owned by a specific user.
 func GetUserPlaylists(db *sql.DB, userID int) ([]models.Playlist, error) {
 	query := `
-		SELECT id, user_id, name, created_at, updated_at
-		FROM playlists
-		WHERE user_id = $1
-		ORDER BY created_at DESC
+		SELECT p.id, p.user_id, p.name, p.created_at, p.updated_at, COUNT(ps.song_id) as song_count
+		FROM playlists p
+		LEFT JOIN playlist_songs ps ON p.id = ps.playlist_id
+		WHERE p.user_id = $1
+		GROUP BY p.id
+		ORDER BY p.created_at DESC
 	`
 	rows, err := db.Query(query, userID)
 	if err != nil {
@@ -43,7 +45,7 @@ func GetUserPlaylists(db *sql.DB, userID int) ([]models.Playlist, error) {
 	var playlists []models.Playlist
 	for rows.Next() {
 		var p models.Playlist
-		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Name, &p.CreatedAt, &p.UpdatedAt, &p.SongCount); err != nil {
 			return nil, err
 		}
 		playlists = append(playlists, p)
@@ -78,7 +80,7 @@ func GetPlaylistSongs(db *sql.DB, playlistID int) ([]models.PlaylistSong, error)
 	query := `
 		SELECT
 			s.id, s.fingerprint_hash, s.file_path, s.title, s.artist, s.album, s.year,
-			s.genre_id, g.name as genre, s.duration, s.bitrate, s.file_size, s.last_modified,
+			s.genre_id, COALESCE(g.name, '') as genre, s.duration, s.bitrate, s.file_size, s.last_modified,
 			ps.position
 		FROM songs s
 		LEFT JOIN genres g ON s.genre_id = g.id

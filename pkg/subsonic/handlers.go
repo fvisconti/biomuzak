@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/xml"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,17 +11,19 @@ import (
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
+	"go-postgres-example/pkg/storage"
 )
 
 // Handler holds the dependencies for the subsonic handlers
 type Handler struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB      *sql.DB
+	Cfg     *config.Config
+	Storage storage.StorageService
 }
 
 // NewHandler creates a new Handler
-func NewHandler(db *sql.DB, cfg *config.Config) *Handler {
-	return &Handler{DB: db, Cfg: cfg}
+func NewHandler(db *sql.DB, cfg *config.Config, storage storage.StorageService) *Handler {
+	return &Handler{DB: db, Cfg: cfg, Storage: storage}
 }
 
 // Ping is a handler for the /rest/ping.view endpoint
@@ -179,14 +180,16 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := os.Open(filePath)
+	// Stream from storage service
+	fileStream, err := h.Storage.GetFileStream(r.Context(), filePath)
 	if err != nil {
-		http.Error(w, "Failed to open file", http.StatusInternalServerError)
+		// Log the error
+		http.Error(w, "Failed to open file stream", http.StatusInternalServerError)
 		return
 	}
-	defer file.Close()
+	defer fileStream.Close()
 
-	http.ServeContent(w, r, file.Name(), time.Time{}, file)
+	http.ServeContent(w, r, filePath, time.Time{}, fileStream)
 }
 
 func respondWithXML(w http.ResponseWriter, data interface{}) {

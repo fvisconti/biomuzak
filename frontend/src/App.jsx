@@ -1,44 +1,84 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import MainLayout from './components/Layout/MainLayout';
-import Dashboard from './pages/Dashboard';
-import { Box, Text } from '@chakra-ui/react';
-
-// Placeholder Pages
-const Library = () => <Box><Text fontSize="2xl">Library</Text></Box>;
-const Playlists = () => <Box><Text fontSize="2xl">Playlists</Text></Box>;
-
-import { AuthProvider } from './context/AuthContext';
-import ProtectedRoute from './components/Auth/ProtectedRoute';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import Register from './pages/Register';
+import Upload from './pages/Upload';
+import Playlists from './pages/Playlists';
+import PlaylistDetails from './pages/PlaylistDetails';
+import Library from './pages/Library';
+import MainLayout from './components/Layout/MainLayout';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { PlayerProvider } from './context/PlayerContext';
+import PlayerBar from './components/Layout/PlayerBar';
 
-function App() {
+// Protected Route Component
+const ProtectedRoute = ({ children }) => {
+  const { token, loading } = useAuth();
+
+  if (loading) {
+    return null;
+  }
+
+  if (!token) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return children;
+};
+
+const App = () => {
   return (
-    <Router>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+    <AuthProvider>
+      <PlayerProvider>
+        <Router>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
 
-          <Route
-            path="/*"
-            element={
+            <Route path="/" element={
               <ProtectedRoute>
                 <MainLayout>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/library" element={<Library />} />
-                    <Route path="/playlists" element={<Playlists />} />
-                  </Routes>
+                  <Navigate to="/upload" replace />
                 </MainLayout>
               </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </AuthProvider>
-    </Router>
+            } />
+
+            <Route path="/upload" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Upload />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/playlists" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Playlists />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/playlists/:playlistID" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <PlaylistDetails />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+
+            <Route path="/library" element={
+              <ProtectedRoute>
+                <MainLayout>
+                  <Library />
+                </MainLayout>
+              </ProtectedRoute>
+            } />
+          </Routes>
+          <PlayerBar />
+        </Router>
+      </PlayerProvider>
+    </AuthProvider>
   );
-}
+};
 
 export default App;

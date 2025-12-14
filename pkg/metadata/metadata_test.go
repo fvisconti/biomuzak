@@ -1,15 +1,38 @@
 package metadata
 
 import (
+	"context"
 	"encoding/json"
 	"go-postgres-example/pkg/config"
+	"go-postgres-example/pkg/storage"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+type MockStorage struct {
+	UploadFileCalls int
+	LastObjectKey   string
+}
+
+func (m *MockStorage) UploadFile(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error {
+	m.UploadFileCalls++
+	m.LastObjectKey = objectName
+	return nil
+}
+
+func (m *MockStorage) GetFileStream(ctx context.Context, objectName string) (storage.ReadSeekCloser, error) {
+	return nil, nil
+}
+
+func (m *MockStorage) GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error) {
+	return nil, nil
+}
 
 func TestGenerateFileHash(t *testing.T) {
 	// Create a temporary test file in a temporary directory
@@ -47,37 +70,34 @@ func TestMoveToUploadDir(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	// Create a processor with test config
+	// Create a mock storage
+	mockStorage := &MockStorage{}
+
+	// Create a processor with test config and mock storage
 	cfg := &config.Config{
 		UploadDir: uploadDir,
 	}
-	p := &Processor{Cfg: cfg}
+	p := &Processor{Cfg: cfg, Storage: mockStorage}
 
 	// Test moving the file
 	testHash := "testhash123"
-	permanentPath, err := p.moveToUploadDir(testFile, testHash)
+	objectKey, err := p.moveToUploadDir(testFile, testHash)
 	if err != nil {
 		t.Fatalf("moveToUploadDir() returned error: %v", err)
 	}
 
-	// Verify the permanent path is correct
-	expectedPath := filepath.Join(uploadDir, testHash+".mp3")
-	if permanentPath != expectedPath {
-		t.Errorf("moveToUploadDir() returned path %q, want %q", permanentPath, expectedPath)
+	// Verify the object key is correct
+	expectedKey := testHash + ".mp3"
+	if objectKey != expectedKey {
+		t.Errorf("moveToUploadDir() returned key %q, want %q", objectKey, expectedKey)
 	}
 
-	// Verify the file exists at the new location
-	if _, err := os.Stat(permanentPath); os.IsNotExist(err) {
-		t.Errorf("File was not moved to permanent location: %v", err)
+	// Verify UploadFile was called
+	if mockStorage.UploadFileCalls != 1 {
+		t.Errorf("Expected UploadFile to be called once, got %d", mockStorage.UploadFileCalls)
 	}
-
-	// Verify the file content is correct
-	movedContent, err := os.ReadFile(permanentPath)
-	if err != nil {
-		t.Fatalf("Failed to read moved file: %v", err)
-	}
-	if string(movedContent) != string(testContent) {
-		t.Errorf("Moved file content mismatch: got %q, want %q", movedContent, testContent)
+	if mockStorage.LastObjectKey != expectedKey {
+		t.Errorf("Expected UploadFile to be called with key %q, got %q", expectedKey, mockStorage.LastObjectKey)
 	}
 }
 

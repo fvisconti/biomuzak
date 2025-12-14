@@ -27,14 +27,21 @@ type Config struct {
 	MusicBrainzEmail string
 
 	// Upload & Audio Processing
-	UploadDir          string
-	AudioProcessorURL  string
+	UploadDir         string
+	AudioProcessorURL string
 
 	// Registration & bootstrap
 	AllowRegistration bool
 	AdminUsername     string
 	AdminPassword     string
 	AdminEmail        string
+
+	// MinIO Configuration
+	MinIOEndpoint  string
+	MinIOAccessKey string
+	MinIOSecretKey string
+	MinIOBucket    string
+	MinIOUseSSL    bool
 }
 
 // New creates a new Config struct
@@ -58,6 +65,12 @@ func New() *Config {
 		AdminUsername:     getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:     getEnv("ADMIN_PASSWORD", ""),
 		AdminEmail:        getEnv("ADMIN_EMAIL", "admin@local"),
+
+		MinIOEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinIOBucket:    getEnv("MINIO_BUCKET", "music"),
+		MinIOUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
 	}
 
 	// Prefer explicit DATABASE_URL if provided

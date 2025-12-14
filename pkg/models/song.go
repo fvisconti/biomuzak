@@ -14,8 +14,8 @@ type Song struct {
 	Artist          string        `json:"artist"`
 	Album           string        `json:"album"`
 	Year            int           `json:"year"`
-	GenreID         sql.NullInt64 `json:"-"` // Use Genre for input, GenreID for DB
-	Genre           string        `json:"genre"`
+	GenreID         sql.NullInt64 `json:"-"`     // Foreign key to genres table
+	Genre           string        `json:"genre"` // Genre name for JSON response
 	Duration        int           `json:"duration"`
 	Bitrate         int           `json:"bitrate"`
 	FileSize        int64         `json:"file_size"`
