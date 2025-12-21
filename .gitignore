@@ -57,3 +57,4 @@ wheels/
 .installed.cfg
 *.egg
 
+minio_data/
