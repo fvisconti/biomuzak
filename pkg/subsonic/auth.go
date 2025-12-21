@@ -81,6 +81,7 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 					}
 					password = string(hexPassword)
 				}
+				// TODO: Replace this placeholder with secure Subsonic auth that aligns with bcrypt/JWT.
 				// Note: This is not secure, but part of the Subsonic API spec.
 				// The provided hash in the database is generated with bcrypt, which is not compatible with MD5.
 				// For this implementation, we will assume the password is stored in plain text for compatibility.

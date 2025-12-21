@@ -19,14 +19,14 @@ const Login = () => {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const { login } = useAuth();
+    const { login, logout } = useAuth();
     const navigate = useNavigate();
     const toast = useToast();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
-        const result = await login(username, password);
+            const result = await login(username, password);
         setIsLoading(false);
 
         if (result.success) {
@@ -92,6 +92,18 @@ const Login = () => {
                                 Register
                             </Link>
                         </Text>
+                        <Button
+                            variant="outline"
+                            colorScheme="red"
+                            size="sm"
+                            onClick={() => {
+                                logout();
+                                setUsername('');
+                                setPassword('');
+                            }}
+                        >
+                            Clear cached session
+                        </Button>
                     </VStack>
                 </Box>
             </Container>

@@ -94,7 +94,11 @@ func FindSimilarSongs(db *sql.DB, songIDToExclude int, queryEmbedding []float64,
 // SaveSongEmbedding saves the embedding for a given song ID.
 func SaveSongEmbedding(db *sql.DB, songID int, embedding []float64) error {
 	embeddingStr := vectorToString(embedding)
-	query := "INSERT INTO song_embeddings (song_id, embedding) VALUES ($1, $2::vector)"
+	query := `
+		INSERT INTO song_embeddings (song_id, embedding)
+		VALUES ($1, $2::vector)
+		ON CONFLICT (song_id) DO UPDATE SET embedding = EXCLUDED.embedding
+	`
 	_, err := db.Exec(query, songID, embeddingStr)
 	return err
 }

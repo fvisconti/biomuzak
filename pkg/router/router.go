@@ -80,12 +80,16 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
 
-			// Admin-only routes
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.AdminOnly(authHandler.DB))
-				r.Post("/api/admin/users", authHandler.AdminCreateUser)
-			})
 		})
+
+		// Admin-only routes (root under /api/admin)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.AdminOnly(authHandler.DB))
+			r.Get("/api/admin/users", authHandler.AdminListUsers)
+			r.Post("/api/admin/users", authHandler.AdminCreateUser)
+			r.Delete("/api/admin/users/{id}", authHandler.DeleteUser)
+		})
+
 	})
 
 	// Serve static files from frontend/build directory

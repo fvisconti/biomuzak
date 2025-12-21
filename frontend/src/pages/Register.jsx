@@ -20,7 +20,7 @@ const Register = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const { register } = useAuth();
+    const { register, logout } = useAuth();
     const navigate = useNavigate();
     const toast = useToast();
 
@@ -110,6 +110,19 @@ const Register = () => {
                                 Log In
                             </Link>
                         </Text>
+                        <Button
+                            variant="outline"
+                            colorScheme="red"
+                            size="sm"
+                            onClick={() => {
+                                logout();
+                                setUsername('');
+                                setPassword('');
+                                setEmail('');
+                            }}
+                        >
+                            Clear cached session
+                        </Button>
                     </VStack>
                 </Box>
             </Container>

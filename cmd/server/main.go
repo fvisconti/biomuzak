@@ -41,23 +41,9 @@ func main() {
 		log.Fatalf("Failed to initialize storage: %v", err)
 	}
 
-	// Run migrations
-	exists, terr := tableExists(conn, "users")
-	if terr != nil {
-		log.Fatalf("Failed checking tables: %v", terr)
-	}
-	if !exists {
-		if err = db.Migrate(conn, "db/migrations/0001_initial_schema.sql"); err != nil {
-			log.Fatalf("Failed to run migration 0001: %v", err)
-		}
-	} else {
-		log.Println("Skipping 0001_initial_schema.sql (users table exists)")
-	}
-	if err = db.Migrate(conn, "db/migrations/0002_enable_pg_trgm.sql"); err != nil {
-		log.Fatalf("Failed to run migration 0002: %v", err)
-	}
-	if err = db.Migrate(conn, "db/migrations/0003_add_is_admin.sql"); err != nil {
-		log.Fatalf("Failed to run migration 0003: %v", err)
+	// Run migrations in explicit version order
+	if err = db.MigrateAll(conn, "db/migrations"); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Ensure an admin user exists on first deployment
@@ -97,7 +83,8 @@ func ensureAdminUser(conn *sql.DB, cfg *config.Config) error {
 	}
 
 	if cfg.AdminUsername == "" || cfg.AdminPassword == "" {
-		return fmt.Errorf("no users exist; please set ADMIN_USERNAME and ADMIN_PASSWORD in environment to bootstrap the initial admin user")
+		log.Printf("No admin credentials provided; skipping admin bootstrap")
+		return nil
 	}
 
 	// Hash password
@@ -113,14 +100,4 @@ func ensureAdminUser(conn *sql.DB, cfg *config.Config) error {
 	}
 	log.Printf("Bootstrap admin user '%s' created", cfg.AdminUsername)
 	return nil
-}
-
-// tableExists checks whether a table exists in the public schema
-func tableExists(conn *sql.DB, table string) (bool, error) {
-	var exists bool
-	err := conn.QueryRow(`SELECT EXISTS (
-		SELECT FROM information_schema.tables 
-		WHERE table_schema = 'public' AND table_name = $1
-	)`, table).Scan(&exists)
-	return exists, err
 }

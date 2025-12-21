@@ -8,6 +8,7 @@ import { useDroppable } from '@dnd-kit/core';
 
 const NavItem = ({ icon, children, to }) => {
     const location = useLocation();
+    const isActive = location.pathname === to;
     const hoverBg = useColorModeValue('gray.100', 'gray.800');
     const activeBg = useColorModeValue('gray.200', 'gray.700');
     const activeTextColor = useColorModeValue('blue.600', 'white');
@@ -114,6 +115,10 @@ const Sidebar = () => {
                 </VStack>
 
                 <NavItem icon={FiUploadCloud} to="/upload">Upload</NavItem>
+                {/* Admin link */}
+                {useAuth().user?.is_admin && (
+                    <NavItem icon={FiDisc} to="/admin/users">Admin Users</NavItem>
+                )}
             </VStack>
         </Box>
     );

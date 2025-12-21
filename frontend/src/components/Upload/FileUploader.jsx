@@ -80,6 +80,45 @@ const FileUploader = () => {
         }
     }, [uploading, queue, currentFile]);
 
+    // Poll for playlist population after uploads finish when a new playlist was created
+    useEffect(() => {
+        // Detect upload completion
+        const uploadsFinished = !uploading && queue.length === 0 && !currentFile && completed.length > 0;
+        if (!uploadsFinished) return;
+
+        const targetName = (selectedPlaylist === 'NEW' || newPlaylistName) ? (newPlaylistName || '') : null;
+        if (!targetName) return;
+
+        let cancelled = false;
+
+        const poll = async (attempts = 0) => {
+            if (cancelled) return;
+            try {
+                // Fetch playlists directly so we get the freshest data
+                const res = await fetch('/api/playlists', { headers: { 'Authorization': `Bearer ${token}` } });
+                if (res.ok) {
+                    const data = await res.json();
+                    const found = data.find(p => p.name === targetName);
+                    if (found) {
+                        if ((found.song_count || 0) > 0) {
+                            // Update context playlists so UI shows the correct counts
+                            await refreshPlaylists();
+                            return;
+                        }
+                    }
+                }
+                if (attempts >= 15) return; // give up after ~30s
+            } catch (err) {
+                // ignore and retry
+            }
+            setTimeout(() => poll(attempts + 1), 2000);
+        };
+
+        poll();
+
+        return () => { cancelled = true; };
+    }, [uploading, queue, currentFile, completed, selectedPlaylist, newPlaylistName, refreshPlaylists, playlists]);
+
     const uploadNextFile = async () => {
         const fileToUpload = queue[0];
         setCurrentFile(fileToUpload);
@@ -109,10 +148,6 @@ const FileUploader = () => {
             xhr.onload = () => {
                 if (xhr.status === 200) {
                     setCompleted(prev => [...prev, fileToUpload.name]);
-                    // If a new playlist was created during upload, refresh the list
-                    if (selectedPlaylist === 'NEW' || newPlaylistName) {
-                        refreshPlaylists();
-                    }
                 } else {
                     console.error('Upload failed for', fileToUpload.name);
                     toast({

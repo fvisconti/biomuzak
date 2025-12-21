@@ -5,6 +5,7 @@ import Upload from './pages/Upload';
 import Playlists from './pages/Playlists';
 import PlaylistDetails from './pages/PlaylistDetails';
 import Library from './pages/Library';
+import AdminUsers from './pages/AdminUsers';
 import MainLayout from './components/Layout/MainLayout';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PlayerProvider } from './context/PlayerContext';
@@ -74,6 +75,13 @@ const App = () => {
                   <ProtectedRoute>
                     <MainLayout>
                       <Library />
+                    </MainLayout>
+                  </ProtectedRoute>
+                } />
+                <Route path="/admin/users" element={
+                  <ProtectedRoute>
+                    <MainLayout>
+                      <AdminUsers />
                     </MainLayout>
                   </ProtectedRoute>
                 } />
