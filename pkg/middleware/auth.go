@@ -16,14 +16,15 @@ func Authenticator(jwtSecret string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header is required", http.StatusUnauthorized)
-				return
+			tokenString := ""
+			if authHeader != "" {
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			} else {
+				tokenString = r.URL.Query().Get("token")
 			}
 
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			if tokenString == authHeader {
-				http.Error(w, "Could not find bearer token in Authorization header", http.StatusUnauthorized)
+			if tokenString == "" {
+				http.Error(w, "Authentication required", http.StatusUnauthorized)
 				return
 			}
 

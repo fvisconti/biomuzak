@@ -1,13 +1,16 @@
 import React from 'react';
-import { Box, VStack, Link, Icon, Text, Divider } from '@chakra-ui/react';
+import { Box, VStack, Link, Icon, Text, Divider, useColorModeValue } from '@chakra-ui/react';
 import { FiHome, FiMusic, FiList, FiDisc, FiUploadCloud } from 'react-icons/fi';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { usePlaylists } from '../../context/PlaylistContext';
 import { useDroppable } from '@dnd-kit/core';
 
 const NavItem = ({ icon, children, to }) => {
     const location = useLocation();
-    const isActive = location.pathname === to;
+    const hoverBg = useColorModeValue('gray.100', 'gray.800');
+    const activeBg = useColorModeValue('gray.200', 'gray.700');
+    const activeTextColor = useColorModeValue('blue.600', 'white');
 
     return (
         <Link
@@ -19,12 +22,13 @@ const NavItem = ({ icon, children, to }) => {
             <Box
                 p={3}
                 cursor="pointer"
-                bg={isActive ? 'gray.700' : 'transparent'}
-                _hover={{ bg: 'gray.800', color: 'white' }}
+                bg={isActive ? activeBg : 'transparent'}
+                _hover={{ bg: hoverBg, color: activeTextColor }}
                 display="flex"
                 alignItems="center"
                 borderLeft={isActive ? '4px solid' : '4px solid transparent'}
                 borderColor={isActive ? 'blue.400' : 'transparent'}
+                color={isActive ? activeTextColor : 'inherit'}
             >
                 <Icon as={icon} mr={3} boxSize={5} />
                 <Text fontWeight="bold">{children}</Text>
@@ -39,6 +43,12 @@ const DroppablePlaylistLink = ({ pl }) => {
         data: { type: 'playlist', id: pl.id, name: pl.name }
     });
 
+    const isActive = window.location.pathname === `/playlists/${pl.id}`;
+    const activeColor = useColorModeValue('blue.600', 'white');
+    const inactiveColor = useColorModeValue('gray.600', 'gray.500');
+    const hoverBg = useColorModeValue('gray.100', 'gray.800');
+    const activeBg = useColorModeValue('gray.200', 'gray.800');
+
     return (
         <Link
             ref={setNodeRef}
@@ -46,10 +56,10 @@ const DroppablePlaylistLink = ({ pl }) => {
             to={`/playlists/${pl.id}`}
             p={2}
             fontSize="sm"
-            _hover={{ color: 'white', bg: 'gray.800' }}
+            _hover={{ color: activeColor, bg: hoverBg }}
             borderRadius="md"
-            color={window.location.pathname === `/playlists/${pl.id}` ? 'white' : 'gray.500'}
-            bg={isOver ? 'blue.900' : (window.location.pathname === `/playlists/${pl.id}` ? 'gray.800' : 'transparent')}
+            color={isActive ? activeColor : inactiveColor}
+            bg={isOver ? 'blue.900' : (isActive ? activeBg : 'transparent')}
             border={isOver ? '1px dashed' : 'none'}
             borderColor="blue.400"
         >
@@ -59,40 +69,25 @@ const DroppablePlaylistLink = ({ pl }) => {
 };
 
 const Sidebar = () => {
-    const { token } = useAuth();
-    const [playlists, setPlaylists] = React.useState([]);
-
-    React.useEffect(() => {
-        const fetchPlaylists = async () => {
-            if (!token) return;
-            try {
-                const res = await fetch('/api/playlists', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setPlaylists(data || []);
-                }
-            } catch (error) {
-                console.error("Failed to fetch playlists for sidebar", error);
-            }
-        };
-        fetchPlaylists();
-    }, [token]);
+    const { playlists } = usePlaylists();
+    const bg = useColorModeValue('gray.50', 'gray.900');
+    const color = useColorModeValue('gray.600', 'gray.400');
+    const borderColor = useColorModeValue('gray.200', 'gray.800');
+    const logoColor = useColorModeValue('blue.600', 'white');
 
     return (
         <Box
             w="250px"
             h="100%"
-            bg="gray.900"
-            color="gray.400"
+            bg={bg}
+            color={color}
             borderRight="1px solid"
-            borderColor="gray.800"
+            borderColor={borderColor}
             py={5}
             overflowY="auto"
         >
             <Box px={5} mb={8}>
-                <Text fontSize="2xl" fontWeight="bold" color="white" letterSpacing="tight">
+                <Text fontSize="2xl" fontWeight="bold" color={logoColor} letterSpacing="tight">
                     BIOMUZAK
                 </Text>
             </Box>

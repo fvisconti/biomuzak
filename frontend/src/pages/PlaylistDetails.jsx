@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     Box, Heading, Text, VStack, Container, Table, Thead, Tbody, Tr, Th, Td,
-    HStack, Button, Icon, Spinner, IconButton, useToast
+    HStack, Button, Icon, Spinner, IconButton, useToast, useColorModeValue
 } from '@chakra-ui/react';
-import { FiMusic, FiUpload, FiTrash2, FiArrowLeft, FiPlay, FiChevronUp, FiChevronDown } from 'react-icons/fi';
+import { FiMusic, FiUpload, FiTrash2, FiArrowLeft, FiPlay, FiChevronUp, FiChevronDown, FiDownload } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
 import { useDrag } from '../context/DragContext';
+import { usePlaylists } from '../context/PlaylistContext';
 import {
     closestCenter,
 } from '@dnd-kit/core';
@@ -31,6 +32,8 @@ const PlaylistDetails = () => {
     const toast = useToast();
     const { playPlaylist } = usePlayer();
     const { setOnDragEnd } = useDrag();
+    const { refreshPlaylists } = usePlaylists();
+    const emptyBorderColor = useColorModeValue('gray.300', 'gray.700');
 
     const handleSort = (column) => {
         if (sortBy === column) {
@@ -150,6 +153,7 @@ const PlaylistDetails = () => {
             });
             if (res.ok) {
                 toast({ title: "Playlist deleted", status: "success" });
+                refreshPlaylists();
                 navigate('/playlists');
             }
         } catch (error) {
@@ -193,6 +197,17 @@ const PlaylistDetails = () => {
                         <Button leftIcon={<FiPlay />} colorScheme="green" onClick={handlePlayAll}>
                             Play All
                         </Button>
+                        <Button
+                            leftIcon={<FiDownload />}
+                            colorScheme="blue"
+                            variant="outline"
+                            onClick={() => {
+                                const url = `/api/playlists/${playlistID}/download?token=${token}`;
+                                window.open(url, '_blank');
+                            }}
+                        >
+                            Download All
+                        </Button>
                         <Button leftIcon={<FiUpload />} colorScheme="brand" onClick={handleUploadToPlaylist}>
                             Add Music
                         </Button>
@@ -206,7 +221,7 @@ const PlaylistDetails = () => {
                     <Box
                         p={10}
                         border="1px dashed"
-                        borderColor="gray.700"
+                        borderColor={emptyBorderColor}
                         borderRadius="md"
                         textAlign="center"
                     >
@@ -248,6 +263,7 @@ const PlaylistDetails = () => {
                                             key={song.id}
                                             song={song}
                                             index={playlist.songs.indexOf(song)}
+                                            token={token}
                                             handlePlaySong={handlePlaySong}
                                             handleDeleteSong={handleDeleteSong}
                                         />

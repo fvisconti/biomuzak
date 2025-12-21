@@ -69,7 +69,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(conn, cfg)
 	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
-	playlistHandler := handlers.NewPlaylistHandler(conn, cfg)
+	playlistHandler := handlers.NewPlaylistHandler(conn, cfg, minioStorage)
 	songHandler := handlers.NewSongHandler(conn, cfg)
 	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Flex, useToast } from '@chakra-ui/react';
+import { Box, Flex, useToast, useColorModeValue } from '@chakra-ui/react';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import PlayerBar from './PlayerBar';
@@ -67,7 +67,7 @@ const MainLayout = ({ children }) => {
     };
 
     return (
-        <Box h="100vh" bg="#0d0d0d" overflow="hidden">
+        <Box h="100vh" bg={useColorModeValue('white', '#0d0d0d')} overflow="hidden">
             <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
                 <Flex h="calc(100vh - 90px)">
                     <Sidebar />

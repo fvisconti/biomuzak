@@ -1,14 +1,19 @@
 package handlers
 
 import (
+	"archive/zip"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/models"
+	"go-postgres-example/pkg/storage"
+	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -16,13 +21,14 @@ import (
 
 // PlaylistHandler holds the dependencies for the playlist handlers.
 type PlaylistHandler struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB      *sql.DB
+	Cfg     *config.Config
+	Storage storage.StorageService
 }
 
 // NewPlaylistHandler creates a new PlaylistHandler.
-func NewPlaylistHandler(db *sql.DB, cfg *config.Config) *PlaylistHandler {
-	return &PlaylistHandler{DB: db, Cfg: cfg}
+func NewPlaylistHandler(db *sql.DB, cfg *config.Config, s storage.StorageService) *PlaylistHandler {
+	return &PlaylistHandler{DB: db, Cfg: cfg, Storage: s}
 }
 
 // CreatePlaylistRequest defines the structure for the create playlist request.
@@ -337,4 +343,63 @@ func (h *PlaylistHandler) ReorderPlaylistSongsHandler(w http.ResponseWriter, r *
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Playlist reordered successfully"})
+}
+
+// DownloadPlaylistHandler zips and serves the songs in a playlist
+func (h *PlaylistHandler) DownloadPlaylistHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	playlistIDStr := chi.URLParam(r, "playlistID")
+	playlistID, err := strconv.Atoi(playlistIDStr)
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	playlist, err := db.GetPlaylistByID(h.DB, userID, playlistID)
+	if err != nil {
+		http.Error(w, "Playlist not found", http.StatusNotFound)
+		return
+	}
+
+	songs, err := db.GetPlaylistSongs(h.DB, playlistID)
+	if err != nil {
+		http.Error(w, "Failed to get playlist songs", http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for zip download
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", fmt.Sprintf("playlist_%s.zip", playlist.Name)))
+
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+
+	for _, song := range songs {
+		fileStream, err := h.Storage.GetFileStream(r.Context(), song.FilePath)
+		if err != nil {
+			log.Printf("Failed to get file stream for song %d: %v", song.ID, err)
+			continue
+		}
+
+		// Create file in zip
+		filename := fmt.Sprintf("%s - %s%s", song.Artist, song.Title, filepath.Ext(song.FilePath))
+		f, err := zw.Create(filename)
+		if err != nil {
+			log.Printf("Failed to create zip entry for song %d: %v", song.ID, err)
+			fileStream.Close()
+			continue
+		}
+
+		_, err = io.Copy(f, fileStream)
+		fileStream.Close()
+		if err != nil {
+			log.Printf("Failed to copy song %d to zip: %v", song.ID, err)
+			continue
+		}
+	}
 }

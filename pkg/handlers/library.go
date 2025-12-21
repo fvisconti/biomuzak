@@ -39,6 +39,7 @@ func (h *LibraryHandler) GetLibraryHandler(w http.ResponseWriter, r *http.Reques
 		"artist": queryParams.Get("artist"),
 		"album":  queryParams.Get("album"),
 		"year":   queryParams.Get("year"),
+		"q":      queryParams.Get("q"),
 	}
 	sortBy := queryParams.Get("sort_by")
 

@@ -2,42 +2,27 @@ import React, { useState, useEffect } from 'react';
 import {
     Box, Heading, Text, VStack, Button, Container, HStack, Spacer,
     Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody, ModalCloseButton,
-    Input, useDisclosure, useToast, SimpleGrid, Icon
+    Input, useDisclosure, useToast, SimpleGrid, Icon, IconButton, useColorModeValue
 } from '@chakra-ui/react';
 import { FiPlus, FiUpload, FiList, FiTrash2 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { usePlaylists } from '../context/PlaylistContext';
 
 const Playlists = () => {
     const navigate = useNavigate();
     const { isOpen, onOpen, onClose } = useDisclosure();
     const [playlistName, setPlaylistName] = useState('');
-    const [playlists, setPlaylists] = useState([]);
-    const [loading, setLoading] = useState(true);
+    const { playlists, loading, refreshPlaylists } = usePlaylists();
     const { token } = useAuth();
     const toast = useToast();
 
-    const fetchPlaylists = async () => {
-        try {
-            const res = await fetch('/api/playlists', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setPlaylists(data || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch playlists", error);
-        } finally {
-            setLoading(false);
-        }
-    };
+    const cardBg = useColorModeValue('white', 'gray.800');
+    const borderColor = useColorModeValue('gray.200', 'gray.700');
+    const modalBg = useColorModeValue('white', 'gray.900');
+    const emptyBorderColor = useColorModeValue('gray.300', 'gray.700');
 
-    useEffect(() => {
-        fetchPlaylists();
-    }, [token]);
+    // Playlist fetching is now handled by PlaylistContext
 
     const handleCreatePlaylist = async () => {
         try {
@@ -59,7 +44,7 @@ const Playlists = () => {
                 });
                 setPlaylistName('');
                 onClose();
-                fetchPlaylists(); // Refresh list
+                refreshPlaylists(); // Refresh list
             } else {
                 toast({
                     title: "Failed to create playlist",
@@ -91,7 +76,7 @@ const Playlists = () => {
                     duration: 3000,
                     isClosable: true,
                 });
-                fetchPlaylists();
+                refreshPlaylists();
             } else {
                 toast({
                     title: "Failed to delete playlist",
@@ -130,7 +115,7 @@ const Playlists = () => {
                     <Box
                         p={10}
                         border="1px dashed"
-                        borderColor="gray.700"
+                        borderColor={emptyBorderColor}
                         borderRadius="md"
                         textAlign="center"
                     >
@@ -147,10 +132,10 @@ const Playlists = () => {
                             <Box
                                 key={playlist.id}
                                 p={5}
-                                bg="gray.800"
+                                bg={cardBg}
                                 borderRadius="lg"
                                 borderWidth="1px"
-                                borderColor="gray.700"
+                                borderColor={borderColor}
                                 _hover={{ borderColor: 'brand.500' }}
                                 cursor="pointer"
                                 onClick={() => navigate(`/playlists/${playlist.id}`)}
@@ -183,7 +168,7 @@ const Playlists = () => {
 
             <Modal isOpen={isOpen} onClose={onClose}>
                 <ModalOverlay />
-                <ModalContent bg="gray.900" borderColor="gray.700" borderWidth="1px">
+                <ModalContent bg={modalBg} borderColor={borderColor} borderWidth="1px">
                     <ModalHeader>Create New Playlist</ModalHeader>
                     <ModalCloseButton />
                     <ModalBody>

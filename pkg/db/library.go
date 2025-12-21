@@ -26,7 +26,10 @@ func GetSongsByUserID(db *sql.DB, userID int, filters map[string]string, sortBy 
 	// Add filters to the query
 	for key, value := range filters {
 		if value != "" {
-			if key == "year" {
+			if key == "q" {
+				query += fmt.Sprintf(" AND (s.title ILIKE $%d OR s.artist ILIKE $%d OR s.album ILIKE $%d)", argID, argID, argID)
+				value = "%" + value + "%"
+			} else if key == "year" {
 				query += fmt.Sprintf(" AND s.%s = $%d", key, argID)
 			} else {
 				query += fmt.Sprintf(" AND s.%s ILIKE $%d", key, argID)
@@ -221,13 +224,20 @@ func GetSongFilePath(db *sql.DB, songID int) (string, error) {
 	return filePath, nil
 }
 
+// GetSongByID retrieves song details by its ID
+func GetSongByID(db *sql.DB, songID int) (*models.Song, error) {
+	var song models.Song
+	query := `SELECT id, title, artist, album, file_path FROM songs WHERE id = $1`
+	err := db.QueryRow(query, songID).Scan(&song.ID, &song.Title, &song.Artist, &song.Album, &song.FilePath)
+	if err != nil {
+		return nil, err
+	}
+	return &song, nil
+}
+
 // FindGenreByTrigramSearch finds the closest matching genre using trigram similarity.
 func FindGenreByTrigramSearch(db *sql.DB, genreName string) (string, error) {
 	var bestMatch string
-	// ... (existing code)
-	// This query calculates the similarity between the input genreName and all existing genre names.
-	// It returns the name of the genre with the highest similarity, but only if the similarity is above a certain threshold (e.g., 0.3).
-	// The threshold helps to avoid bad matches for very dissimilar names.
 	query := `
 		SELECT name FROM genres WHERE similarity(name, $1) > 0.3
 		ORDER BY similarity(name, $1) DESC
@@ -276,11 +286,6 @@ func GetAlbums(db *sql.DB, userID int) ([]models.VirtualAlbum, error) {
 
 // GetAlbumSongs retrieves songs for a specific album and artist
 func GetAlbumSongs(db *sql.DB, userID int, albumName string, artistName string) ([]models.LibrarySong, error) {
-	// Re-use GetSongsByUserID but we might need exact match for album/artist?
-	// GetSongsByUserID uses ILIKE which is fuzzy.
-	// For album details, we want exact matches usually, but ILIKE is probably fine for now.
-	// However, if we want exact grouping, we should probably write a specific query or update filters to support exact match.
-	// Let's use a specific query for precision.
 	query := `
 		SELECT
 			s.id, s.fingerprint_hash, s.file_path, s.title, s.artist, s.album, s.year,
@@ -292,8 +297,6 @@ func GetAlbumSongs(db *sql.DB, userID int, albumName string, artistName string) 
 		WHERE us.user_id = $1 AND s.album = $2 AND ($3 = '' OR s.artist = $3)
 		ORDER BY s.title
 	`
-	// Note: Handling empty artist if songs have album but no artist?
-	// Usually grouping is by (Album, Artist). If Artist is empty in DB, we pass empty string.
 
 	rows, err := db.Query(query, userID, albumName, artistName)
 	if err != nil {

@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/storage"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -66,4 +68,40 @@ func (h *StreamHandler) StreamSongHandler(w http.ResponseWriter, r *http.Request
 
 	// http.ServeContent efficiently handles Range requests which is crucial for seeking.
 	http.ServeContent(w, r, "audio", time.Time{}, fileStream)
+}
+
+// DownloadSongHandler downloads a song file
+func (h *StreamHandler) DownloadSongHandler(w http.ResponseWriter, r *http.Request) {
+	_, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	songIDStr := chi.URLParam(r, "songID")
+	songID, err := strconv.Atoi(songIDStr)
+	if err != nil {
+		http.Error(w, "Invalid song ID", http.StatusBadRequest)
+		return
+	}
+
+	song, err := db.GetSongByID(h.DB, songID)
+	if err != nil {
+		http.Error(w, "Song not found", http.StatusNotFound)
+		return
+	}
+
+	fileStream, err := h.Storage.GetFileStream(r.Context(), song.FilePath)
+	if err != nil {
+		http.Error(w, "Failed to retrieve song file", http.StatusInternalServerError)
+		return
+	}
+	defer fileStream.Close()
+
+	// Set content disposition to attachment for download
+	filename := fmt.Sprintf("%s - %s%s", song.Artist, song.Title, filepath.Ext(song.FilePath))
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Content-Type", "audio/mpeg") // Default to mp3 for downloads if not known, or let ServeContent handle it
+
+	http.ServeContent(w, r, filename, time.Time{}, fileStream)
 }

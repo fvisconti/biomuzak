@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Box, Heading, VStack, Container, Table, Thead, Tbody, Tr, Th, Td,
     Badge, HStack, Icon, IconButton, Spinner, Menu, MenuButton, MenuList, MenuItem,
     Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter,
-    Button, Select, Input, useToast, Editable, EditablePreview, EditableInput, Text
+    Button, Select, Input, useToast, Editable, EditablePreview, EditableInput, Text, useColorModeValue
 } from '@chakra-ui/react';
-import { FiMusic, FiRefreshCw, FiPlay, FiMoreVertical, FiTrash2, FiPlusCircle } from 'react-icons/fi';
+import { FiMusic, FiRefreshCw, FiPlay, FiMoreVertical, FiTrash2, FiPlusCircle, FiDownload } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
+import { usePlaylists } from '../context/PlaylistContext';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
-const DraggableSongRow = ({ song, songs, playPlaylist, handleGenreUpdate, setSelectedSong, setShowAddToPlaylist, handleDeleteSong, formatDuration }) => {
+const DraggableSongRow = ({ song, songs, token, playPlaylist, handleGenreUpdate, setSelectedSong, setShowAddToPlaylist, handleDeleteSong, formatDuration }) => {
     const { attributes, listeners, setNodeRef, transform } = useDraggable({
         id: `track-${song.id}`,
         data: { id: song.id, ...song },
@@ -85,6 +87,15 @@ const DraggableSongRow = ({ song, songs, playPlaylist, handleGenreUpdate, setSel
                             Add to Playlist
                         </MenuItem>
                         <MenuItem
+                            icon={<FiDownload />}
+                            onClick={() => {
+                                const url = `/api/songs/${song.id}/download?token=${token}`;
+                                window.open(url, '_blank');
+                            }}
+                        >
+                            Download Song
+                        </MenuItem>
+                        <MenuItem
                             icon={<FiTrash2 />}
                             onClick={() => handleDeleteSong(song.id)}
                             color="red.400"
@@ -99,8 +110,13 @@ const DraggableSongRow = ({ song, songs, playPlaylist, handleGenreUpdate, setSel
 };
 
 const Library = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const queryParams = new URLSearchParams(location.search);
+    const searchQuery = queryParams.get('q') || '';
+
     const [songs, setSongs] = useState([]);
-    const [playlists, setPlaylists] = useState([]);
+    const { playlists, refreshPlaylists } = usePlaylists();
     const [loading, setLoading] = useState(true);
     const [sortBy, setSortBy] = useState('title');
     const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
@@ -109,11 +125,19 @@ const Library = () => {
     const { token } = useAuth();
     const { playPlaylist } = usePlayer();
     const toast = useToast();
+    const modalBg = useColorModeValue('white', 'gray.800');
+    const emptyBorderColor = useColorModeValue('gray.300', 'gray.700');
 
     const fetchLibrary = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`/api/library?sort_by=${sortBy}`, {
+            const url = new URL('/api/library', window.location.origin);
+            url.searchParams.append('sort_by', sortBy);
+            if (searchQuery) {
+                url.searchParams.append('q', searchQuery);
+            }
+
+            const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -127,24 +151,11 @@ const Library = () => {
         }
     };
 
-    const fetchPlaylists = async () => {
-        try {
-            const res = await fetch('/api/playlists', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setPlaylists(data || []);
-            }
-        } catch (error) {
-            console.error("Failed to fetch playlists", error);
-        }
-    };
+    // Playlist fetching is now handled by PlaylistContext
 
     useEffect(() => {
         fetchLibrary();
-        fetchPlaylists();
-    }, [token, sortBy]);
+    }, [token, sortBy, searchQuery]);
 
     const formatDuration = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -206,7 +217,7 @@ const Library = () => {
                 const playlist = await createRes.json();
                 await handleAddToPlaylist(playlist.id);
                 setNewPlaylistName('');
-                fetchPlaylists();
+                refreshPlaylists();
             }
         } catch (error) {
             toast({ title: "Failed to create playlist", status: "error", duration: 2000 });
@@ -237,7 +248,7 @@ const Library = () => {
             <VStack spacing={6} align="stretch">
                 <HStack justify="space-between">
                     <Heading as="h1" size="xl">
-                        Library ({songs.length})
+                        {searchQuery ? `Search Results for "${searchQuery}"` : `Library (${songs.length})`}
                     </Heading>
                     <IconButton
                         icon={<FiRefreshCw />}
@@ -253,7 +264,7 @@ const Library = () => {
                     <Box
                         p={10}
                         border="1px dashed"
-                        borderColor="gray.700"
+                        borderColor={emptyBorderColor}
                         borderRadius="md"
                         textAlign="center"
                     >
@@ -292,6 +303,7 @@ const Library = () => {
                                         key={song.id}
                                         song={song}
                                         songs={songs}
+                                        token={token}
                                         playPlaylist={playPlaylist}
                                         handleGenreUpdate={handleGenreUpdate}
                                         setSelectedSong={setSelectedSong}
@@ -308,7 +320,7 @@ const Library = () => {
 
             <Modal isOpen={showAddToPlaylist} onClose={() => setShowAddToPlaylist(false)}>
                 <ModalOverlay />
-                <ModalContent bg="gray.800">
+                <ModalContent bg={modalBg}>
                     <ModalHeader>Add to Playlist</ModalHeader>
                     <ModalBody>
                         <VStack spacing={4} align="stretch">

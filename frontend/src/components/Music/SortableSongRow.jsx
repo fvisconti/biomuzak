@@ -1,10 +1,10 @@
 import React from 'react';
 import { Tr, Td, IconButton, Icon, Text, HStack } from '@chakra-ui/react';
-import { FiPlay, FiMusic, FiTrash2 } from 'react-icons/fi';
+import { FiPlay, FiMusic, FiTrash2, FiDownload } from 'react-icons/fi';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
-const SortableSongRow = ({ song, index, handlePlaySong, handleDeleteSong }) => {
+const SortableSongRow = ({ song, index, token, handlePlaySong, handleDeleteSong }) => {
     const {
         attributes,
         listeners,
@@ -46,15 +46,30 @@ const SortableSongRow = ({ song, index, handlePlaySong, handleDeleteSong }) => {
                 {Math.floor(song.duration / 60)}:{(song.duration % 60).toString().padStart(2, '0')}
             </Td>
             <Td>
-                <IconButton
-                    icon={<FiTrash2 />}
-                    size="sm"
-                    colorScheme="red"
-                    variant="ghost"
-                    onClick={(e) => { e.stopPropagation(); handleDeleteSong(song.id); }}
-                    aria-label="Remove song"
-                    onPointerDown={(e) => e.stopPropagation()}
-                />
+                <HStack spacing={1}>
+                    <IconButton
+                        icon={<FiDownload />}
+                        size="sm"
+                        variant="ghost"
+                        colorScheme="blue"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            const url = `/api/songs/${song.id}/download?token=${token}`;
+                            window.open(url, '_blank');
+                        }}
+                        aria-label="Download song"
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                    <IconButton
+                        icon={<FiTrash2 />}
+                        size="sm"
+                        colorScheme="red"
+                        variant="ghost"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteSong(song.id); }}
+                        aria-label="Remove song"
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                </HStack>
             </Td>
         </Tr>
     );

@@ -61,6 +61,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
 		r.Get("/api/songs/{songID}/similar", songHandler.GetSimilarSongsHandler)
 		r.Get("/api/songs/{songID}/stream", streamHandler.StreamSongHandler)
+		r.Get("/api/songs/{songID}/download", streamHandler.DownloadSongHandler)
 
 		// Playlist routes
 		r.Route("/api/playlists", func(r chi.Router) {
@@ -69,6 +70,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 			r.Route("/{playlistID}", func(r chi.Router) {
 				r.Get("/", playlistHandler.GetPlaylistHandler)
+				r.Get("/download", playlistHandler.DownloadPlaylistHandler)
 				r.Put("/", playlistHandler.UpdatePlaylistHandler)
 				r.Delete("/", playlistHandler.DeletePlaylistHandler)
 

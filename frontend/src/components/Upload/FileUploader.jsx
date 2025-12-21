@@ -18,6 +18,7 @@ import {
 } from '@chakra-ui/react';
 import { FiUploadCloud, FiFile, FiCheck, FiFolder } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
+import { usePlaylists } from '../../context/PlaylistContext';
 
 // Helper to recursively read entries
 const scanFiles = async (item) => {
@@ -47,7 +48,7 @@ const FileUploader = () => {
     const [uploading, setUploading] = useState(false);
     const [currentFile, setCurrentFile] = useState(null);
     const [progress, setProgress] = useState(0);
-    const [playlists, setPlaylists] = useState([]);
+    const { playlists, refreshPlaylists } = usePlaylists();
     const [selectedPlaylist, setSelectedPlaylist] = useState(location.state?.playlistID || '');
     const [newPlaylistName, setNewPlaylistName] = useState('');
 
@@ -55,23 +56,7 @@ const FileUploader = () => {
     const toast = useToast();
     const folderInputRef = useRef(null);
 
-    // Fetch playlists for dropdown
-    useEffect(() => {
-        const fetchPlaylists = async () => {
-            try {
-                const res = await fetch('/api/playlists', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setPlaylists(data || []);
-                }
-            } catch (err) {
-                console.error("Failed to fetch playlists", err);
-            }
-        };
-        fetchPlaylists();
-    }, [token]);
+    // Playlist fetching is now handled by PlaylistContext
 
     // Update selected playlist if passed via navigation state (e.g. from PlaylistDetails)
     useEffect(() => {
@@ -124,6 +109,10 @@ const FileUploader = () => {
             xhr.onload = () => {
                 if (xhr.status === 200) {
                     setCompleted(prev => [...prev, fileToUpload.name]);
+                    // If a new playlist was created during upload, refresh the list
+                    if (selectedPlaylist === 'NEW' || newPlaylistName) {
+                        refreshPlaylists();
+                    }
                 } else {
                     console.error('Upload failed for', fileToUpload.name);
                     toast({
