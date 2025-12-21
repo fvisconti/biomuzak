@@ -111,7 +111,7 @@ nano .env  # or use your favorite editor
 
 3. **Start all services**:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 4. **Access the application**:
@@ -134,12 +134,12 @@ On first startup, the backend will create the admin account and disable public r
 
 6. **Stop the services**:
 ```bash
-docker-compose down
+docker compose down
 ```
 
 To remove all data including the database:
 ```bash
-docker-compose down -v
+docker compose down -v
 ```
 
 ## 💻 Development Setup
@@ -465,7 +465,7 @@ Run the full integration test suite to verify all components work together:
 
 ```bash
 # Start all services first
-docker-compose up -d
+docker compose up -d
 
 # Wait for services to be ready
 sleep 10
@@ -474,7 +474,7 @@ sleep 10
 ./test-integration.sh
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 The integration test script tests:
@@ -513,7 +513,7 @@ For production deployments:
 2. **Generate a secure JWT secret**: `openssl rand -base64 32`
 3. **Enable HTTPS** with a reverse proxy (nginx, Caddy)
 4. **Set up regular backups** of the PostgreSQL database
-5. **Configure volume persistence** in docker-compose.yml
+5. **Configure volume persistence** in docker compose.yml
 6. **Use Docker secrets** or environment file management for sensitive data
 
 ## 📱 Using with Mobile Clients

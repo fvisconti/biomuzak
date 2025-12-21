@@ -42,7 +42,7 @@ The easiest way to install biomuzak is using Docker:
 
 4. **Start biomuzak**:
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 5. **Access the web interface**:
@@ -288,7 +288,7 @@ Your music data is stored in two places:
 **Docker backup**:
 ```bash
 # Backup database
-docker-compose exec postgres pg_dump -U musicuser musicdb > backup.sql
+docker compose exec postgres pg_dump -U musicuser musicdb > backup.sql
 
 # Backup audio files
 cp -r ./uploads /path/to/backup/
@@ -309,14 +309,14 @@ cp -r ./uploads /path/to/backup/
 
 1. **Check if services are running**:
    ```bash
-   docker-compose ps
+   docker compose ps
    ```
    All services should be "Up"
 
 2. **Check logs**:
    ```bash
-   docker-compose logs backend
-   docker-compose logs frontend
+   docker compose logs backend
+   docker compose logs frontend
    ```
 
 3. **Verify ports**:
@@ -330,7 +330,7 @@ cp -r ./uploads /path/to/backup/
 2. **File size**: Very large files (>500MB) may timeout
 3. **Check audio processor**:
    ```bash
-   docker-compose logs audio-processor
+   docker compose logs audio-processor
    ```
 4. **Disk space**: Ensure sufficient space for uploads
 
@@ -359,7 +359,7 @@ cp -r ./uploads /path/to/backup/
 
 1. **Check PostgreSQL is running**:
    ```bash
-   docker-compose logs postgres
+   docker compose logs postgres
    ```
 
 2. **Verify credentials in .env**:
@@ -369,15 +369,15 @@ cp -r ./uploads /path/to/backup/
 
 3. **Reset database** (⚠️ destroys all data):
    ```bash
-   docker-compose down -v
-   docker-compose up -d
+   docker compose down -v
+   docker compose up -d
    ```
 
 ### Getting Help
 
 If you encounter issues:
 
-1. **Check the logs**: `docker-compose logs` shows all service logs
+1. **Check the logs**: `docker compose logs` shows all service logs
 2. **GitHub Issues**: https://github.com/fvisconti/biomuzak/issues
 3. **Documentation**: Review README.md for configuration details
 

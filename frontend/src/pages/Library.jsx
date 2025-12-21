@@ -8,6 +8,95 @@ import {
 import { FiMusic, FiRefreshCw, FiPlay, FiMoreVertical, FiTrash2, FiPlusCircle } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
+import { useDraggable } from '@dnd-kit/core';
+import { CSS } from '@dnd-kit/utilities';
+
+const DraggableSongRow = ({ song, songs, playPlaylist, handleGenreUpdate, setSelectedSong, setShowAddToPlaylist, handleDeleteSong, formatDuration }) => {
+    const { attributes, listeners, setNodeRef, transform } = useDraggable({
+        id: `track-${song.id}`,
+        data: { id: song.id, ...song },
+    });
+
+    const style = {
+        transform: CSS.Translate.toString(transform),
+    };
+
+    return (
+        <Tr
+            key={song.id}
+            ref={setNodeRef}
+            style={style}
+            {...listeners}
+            {...attributes}
+            _hover={{ bg: 'whiteAlpha.50', cursor: 'grab' }}
+            bg={transform ? 'gray.700' : 'transparent'}
+        >
+            <Td>
+                <IconButton
+                    icon={<FiPlay />}
+                    size="xs"
+                    colorScheme="brand"
+                    variant="ghost"
+                    aria-label="Play song"
+                    onClick={(e) => { e.stopPropagation(); playPlaylist(songs, songs.indexOf(song)); }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                />
+            </Td>
+            <Td fontWeight="bold">
+                <Text>{song.title || 'Unknown Title'}</Text>
+            </Td>
+            <Td>{song.artist || 'Unknown Artist'}</Td>
+            <Td>{song.album || 'Unknown Album'}</Td>
+            <Td>{song.year || '-'}</Td>
+            <Td>
+                <Editable
+                    defaultValue={song.genre || 'Unknown'}
+                    onSubmit={(newGenre) => handleGenreUpdate(song.id, newGenre)}
+                >
+                    <EditablePreview
+                        as={Badge}
+                        colorScheme="purple"
+                        variant="subtle"
+                        cursor="pointer"
+                        _hover={{ bg: 'purple.600' }}
+                    />
+                    <EditableInput />
+                </Editable>
+            </Td>
+            <Td isNumeric fontFamily="monospace">{formatDuration(song.duration)}</Td>
+            <Td>
+                <Menu>
+                    <MenuButton
+                        as={IconButton}
+                        icon={<FiMoreVertical />}
+                        variant="ghost"
+                        size="sm"
+                        aria-label="Actions"
+                        onPointerDown={(e) => e.stopPropagation()}
+                    />
+                    <MenuList>
+                        <MenuItem
+                            icon={<FiPlusCircle />}
+                            onClick={() => {
+                                setSelectedSong(song);
+                                setShowAddToPlaylist(true);
+                            }}
+                        >
+                            Add to Playlist
+                        </MenuItem>
+                        <MenuItem
+                            icon={<FiTrash2 />}
+                            onClick={() => handleDeleteSong(song.id)}
+                            color="red.400"
+                        >
+                            Delete Song
+                        </MenuItem>
+                    </MenuList>
+                </Menu>
+            </Td>
+        </Tr>
+    );
+};
 
 const Library = () => {
     const [songs, setSongs] = useState([]);
@@ -199,69 +288,17 @@ const Library = () => {
                             </Thead>
                             <Tbody>
                                 {songs.map((song) => (
-                                    <Tr key={song.id} _hover={{ bg: 'whiteAlpha.50' }}>
-                                        <Td>
-                                            <IconButton
-                                                icon={<FiPlay />}
-                                                size="xs"
-                                                colorScheme="brand"
-                                                variant="ghost"
-                                                aria-label="Play song"
-                                                onClick={() => playPlaylist(songs, songs.indexOf(song))}
-                                            />
-                                        </Td>
-                                        <Td fontWeight="bold">
-                                            <Text>{song.title || 'Unknown Title'}</Text>
-                                        </Td>
-                                        <Td>{song.artist || 'Unknown Artist'}</Td>
-                                        <Td>{song.album || 'Unknown Album'}</Td>
-                                        <Td>{song.year || '-'}</Td>
-                                        <Td>
-                                            <Editable
-                                                defaultValue={song.genre || 'Unknown'}
-                                                onSubmit={(newGenre) => handleGenreUpdate(song.id, newGenre)}
-                                            >
-                                                <EditablePreview
-                                                    as={Badge}
-                                                    colorScheme="purple"
-                                                    variant="subtle"
-                                                    cursor="pointer"
-                                                    _hover={{ bg: 'purple.600' }}
-                                                />
-                                                <EditableInput />
-                                            </Editable>
-                                        </Td>
-                                        <Td isNumeric fontFamily="monospace">{formatDuration(song.duration)}</Td>
-                                        <Td>
-                                            <Menu>
-                                                <MenuButton
-                                                    as={IconButton}
-                                                    icon={<FiMoreVertical />}
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    aria-label="Actions"
-                                                />
-                                                <MenuList>
-                                                    <MenuItem
-                                                        icon={<FiPlusCircle />}
-                                                        onClick={() => {
-                                                            setSelectedSong(song);
-                                                            setShowAddToPlaylist(true);
-                                                        }}
-                                                    >
-                                                        Add to Playlist
-                                                    </MenuItem>
-                                                    <MenuItem
-                                                        icon={<FiTrash2 />}
-                                                        color="red.400"
-                                                        onClick={() => handleDeleteSong(song.id)}
-                                                    >
-                                                        Delete
-                                                    </MenuItem>
-                                                </MenuList>
-                                            </Menu>
-                                        </Td>
-                                    </Tr>
+                                    <DraggableSongRow
+                                        key={song.id}
+                                        song={song}
+                                        songs={songs}
+                                        playPlaylist={playPlaylist}
+                                        handleGenreUpdate={handleGenreUpdate}
+                                        setSelectedSong={setSelectedSong}
+                                        setShowAddToPlaylist={setShowAddToPlaylist}
+                                        handleDeleteSong={handleDeleteSong}
+                                        formatDuration={formatDuration}
+                                    />
                                 ))}
                             </Tbody>
                         </Table>

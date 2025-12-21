@@ -6,6 +6,7 @@ import (
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -148,4 +149,32 @@ func (h *LibraryHandler) UpdateSongGenreHandler(w http.ResponseWriter, r *http.R
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Genre updated successfully"})
+}
+
+// SearchHandler handles fetching search results for artists, albums, and songs
+func (h *LibraryHandler) SearchHandler(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"artists": []interface{}{},
+			"albums":  []interface{}{},
+			"songs":   []interface{}{},
+		})
+		return
+	}
+
+	artists, albums, songs, err := db.Search(h.DB, query)
+	if err != nil {
+		log.Printf("Search failed: %v", err)
+		http.Error(w, "Search failed", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"artists": artists,
+		"albums":  albums,
+		"songs":   songs,
+	})
 }

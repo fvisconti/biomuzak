@@ -4,7 +4,7 @@ import {
     Modal, ModalOverlay, ModalContent, ModalHeader, ModalFooter, ModalBody, ModalCloseButton,
     Input, useDisclosure, useToast, SimpleGrid, Icon
 } from '@chakra-ui/react';
-import { FiPlus, FiUpload, FiList } from 'react-icons/fi';
+import { FiPlus, FiUpload, FiList, FiTrash2 } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -73,6 +73,38 @@ const Playlists = () => {
         }
     };
 
+    const handleDeletePlaylist = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this playlist? The songs will remain in your library.")) return;
+
+        try {
+            const res = await fetch(`/api/playlists/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (res.ok) {
+                toast({
+                    title: "Playlist Deleted",
+                    status: "success",
+                    duration: 3000,
+                    isClosable: true,
+                });
+                fetchPlaylists();
+            } else {
+                toast({
+                    title: "Failed to delete playlist",
+                    status: "error",
+                    duration: 3000,
+                    isClosable: true,
+                });
+            }
+        } catch (error) {
+            console.error("Error deleting playlist", error);
+        }
+    };
+
     return (
         <Container maxW="container.xl" py={8}>
             <VStack spacing={6} align="stretch">
@@ -123,12 +155,25 @@ const Playlists = () => {
                                 cursor="pointer"
                                 onClick={() => navigate(`/playlists/${playlist.id}`)}
                             >
-                                <HStack spacing={4}>
-                                    <Icon as={FiList} boxSize={6} color="brand.400" />
-                                    <VStack align="start" spacing={0}>
-                                        <Text fontWeight="bold" fontSize="lg">{playlist.name}</Text>
-                                        <Text fontSize="sm" color="gray.500">{playlist.song_count || 0} songs</Text>
-                                    </VStack>
+                                <HStack spacing={4} justify="space-between" width="100%">
+                                    <HStack spacing={4} onClick={() => navigate(`/playlists/${playlist.id}`)}>
+                                        <Icon as={FiList} boxSize={6} color="brand.400" />
+                                        <VStack align="start" spacing={0}>
+                                            <Text fontWeight="bold" fontSize="lg">{playlist.name}</Text>
+                                            <Text fontSize="sm" color="gray.500">{playlist.song_count || 0} songs</Text>
+                                        </VStack>
+                                    </HStack>
+                                    <IconButton
+                                        icon={<FiTrash2 />}
+                                        size="sm"
+                                        colorScheme="red"
+                                        variant="ghost"
+                                        aria-label="Delete Playlist"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleDeletePlaylist(playlist.id);
+                                        }}
+                                    />
                                 </HStack>
                             </Box>
                         ))}

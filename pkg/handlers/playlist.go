@@ -7,6 +7,7 @@ import (
 	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/models"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -287,4 +288,53 @@ func (h *PlaylistHandler) RemoveSongFromPlaylistHandler(w http.ResponseWriter, r
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Song removed from playlist successfully"})
+}
+
+// ReorderPlaylistSongsRequest represents the request body for reordering songs
+type ReorderPlaylistSongsRequest struct {
+	SongID      int `json:"song_id"`
+	NewPosition int `json:"new_position"`
+}
+
+// ReorderPlaylistSongsHandler handles reordering songs within a playlist
+func (h *PlaylistHandler) ReorderPlaylistSongsHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
+	playlistIDStr := chi.URLParam(r, "playlistID")
+	playlistID, err := strconv.Atoi(playlistIDStr)
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	var req ReorderPlaylistSongsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership first
+	_, err = db.GetPlaylistByID(h.DB, userID, playlistID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Playlist not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Re-use AddSongToPlaylist logic but it handles reordering correctly because it deletes and re-inserts
+	if err := db.AddSongToPlaylist(h.DB, playlistID, req.SongID, req.NewPosition); err != nil {
+		log.Printf("Failed to reorder song: %v", err)
+		http.Error(w, "Failed to reorder song", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Playlist reordered successfully"})
 }

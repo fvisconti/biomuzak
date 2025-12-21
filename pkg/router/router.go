@@ -50,6 +50,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 		// Current user info
 		r.Get("/api/auth/me", authHandler.Me)
+		r.Get("/api/search", libraryHandler.SearchHandler)
 
 		r.Post("/api/upload", uploadHandler.Upload)
 
@@ -73,6 +74,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 				// Playlist songs routes
 				r.Post("/songs", playlistHandler.AddSongToPlaylistHandler)
+				r.Put("/reorder", playlistHandler.ReorderPlaylistSongsHandler)
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
 

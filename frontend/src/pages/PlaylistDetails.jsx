@@ -4,18 +4,97 @@ import {
     Box, Heading, Text, VStack, Container, Table, Thead, Tbody, Tr, Th, Td,
     HStack, Button, Icon, Spinner, IconButton, useToast
 } from '@chakra-ui/react';
-import { FiMusic, FiUpload, FiTrash2, FiArrowLeft, FiPlay } from 'react-icons/fi';
+import { FiMusic, FiUpload, FiTrash2, FiArrowLeft, FiPlay, FiChevronUp, FiChevronDown } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
 import { usePlayer } from '../context/PlayerContext';
+import { useDrag } from '../context/DragContext';
+import {
+    closestCenter,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+
+import SortableSongRow from '../components/Music/SortableSongRow';
 
 const PlaylistDetails = () => {
     const { playlistID } = useParams();
     const navigate = useNavigate();
     const [playlist, setPlaylist] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [sortBy, setSortBy] = useState('position');
+    const [sortOrder, setSortOrder] = useState('asc');
     const { token } = useAuth();
     const toast = useToast();
     const { playPlaylist } = usePlayer();
+    const { setOnDragEnd } = useDrag();
+
+    const handleSort = (column) => {
+        if (sortBy === column) {
+            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortBy(column);
+            setSortOrder('asc');
+        }
+    };
+
+    const sortedSongs = React.useMemo(() => {
+        if (!playlist || !playlist.songs) return [];
+        const songs = [...playlist.songs];
+        if (sortBy === 'position') return songs;
+
+        return songs.sort((a, b) => {
+            let valA = a[sortBy] || '';
+            let valB = b[sortBy] || '';
+            if (typeof valA === 'string') valA = valA.toLowerCase();
+            if (typeof valB === 'string') valB = valB.toLowerCase();
+
+            if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
+            if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
+            return 0;
+        });
+    }, [playlist, sortBy, sortOrder]);
+
+    const handleDragEnd = async (event) => {
+        const { active, over } = event;
+        if (!over) return;
+
+        // Internal reordering
+        if (active.id !== over.id) {
+            const oldIndex = playlist.songs.findIndex((s) => s.id === active.id);
+            const newIndex = playlist.songs.findIndex((s) => s.id === over.id);
+
+            if (oldIndex !== -1 && newIndex !== -1) {
+                const newSongs = arrayMove(playlist.songs, oldIndex, newIndex);
+                setPlaylist({ ...playlist, songs: newSongs });
+
+                try {
+                    await fetch(`/api/playlists/${playlistID}/reorder`, {
+                        method: 'PUT',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            song_id: active.id,
+                            new_position: newIndex + 1
+                        })
+                    });
+                } catch (error) {
+                    toast({ title: "Failed to save order", status: "error" });
+                }
+            }
+        }
+    };
+
+    // Register the drag handler
+    useEffect(() => {
+        setOnDragEnd(handleDragEnd);
+        return () => setOnDragEnd(null);
+    }, [handleDragEnd, setOnDragEnd]);
 
     const fetchPlaylist = async () => {
         try {
@@ -38,11 +117,12 @@ const PlaylistDetails = () => {
 
     useEffect(() => {
         fetchPlaylist();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [playlistID, token]);
 
     const handleUploadToPlaylist = () => {
         // Navigate to upload page with state to pre-select this playlist
-        navigate('/upload', { state: { playlistID: parseInt(playlistID), playlistName: playlist.name } });
+        navigate('/upload', { state: { playlistID: parseInt(playlistID), playlistName: playlist?.name } });
     };
 
     const handleDeleteSong = async (songID) => {
@@ -54,6 +134,23 @@ const PlaylistDetails = () => {
             if (res.ok) {
                 toast({ title: "Song removed", status: "success" });
                 fetchPlaylist();
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const handleDeletePlaylist = async () => {
+        if (!window.confirm("Are you sure you want to delete this playlist? The songs will remain in your library.")) return;
+
+        try {
+            const res = await fetch(`/api/playlists/${playlistID}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                toast({ title: "Playlist deleted", status: "success" });
+                navigate('/playlists');
             }
         } catch (error) {
             console.error(error);
@@ -99,6 +196,9 @@ const PlaylistDetails = () => {
                         <Button leftIcon={<FiUpload />} colorScheme="brand" onClick={handleUploadToPlaylist}>
                             Add Music
                         </Button>
+                        <Button leftIcon={<FiTrash2 />} colorScheme="red" variant="outline" onClick={handleDeletePlaylist}>
+                            Delete
+                        </Button>
                     </HStack>
                 </HStack>
 
@@ -122,50 +222,37 @@ const PlaylistDetails = () => {
                         <Table variant="simple" size="sm">
                             <Thead>
                                 <Tr>
-                                    <Th>#</Th>
-                                    <Th>Title</Th>
-                                    <Th>Artist</Th>
-                                    <Th>Album</Th>
-                                    <Th>Duration</Th>
+                                    <Th w="40px"></Th>
+                                    <Th cursor="pointer" onClick={() => handleSort('title')}>
+                                        Title {sortBy === 'title' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                    </Th>
+                                    <Th cursor="pointer" onClick={() => handleSort('artist')}>
+                                        Artist {sortBy === 'artist' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                    </Th>
+                                    <Th cursor="pointer" onClick={() => handleSort('album')}>
+                                        Album {sortBy === 'album' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                    </Th>
+                                    <Th cursor="pointer" onClick={() => handleSort('duration')}>
+                                        Duration {sortBy === 'duration' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                    </Th>
                                     <Th></Th>
                                 </Tr>
                             </Thead>
                             <Tbody>
-                                {playlist.songs.map((song, index) => (
-                                    <Tr key={song.id} _hover={{ bg: 'whiteAlpha.50' }}>
-                                        <Td>
-                                            <IconButton
-                                                icon={<FiPlay />}
-                                                size="xs"
-                                                variant="ghost"
-                                                colorScheme="brand"
-                                                onClick={() => handlePlaySong(index)}
-                                                aria-label="Play"
-                                            />
-                                        </Td>
-                                        <Td fontWeight="bold">
-                                            <HStack>
-                                                <Icon as={FiMusic} color="brand.400" />
-                                                <Text>{song.title || 'Unknown Title'}</Text>
-                                            </HStack>
-                                        </Td>
-                                        <Td>{song.artist || '-'}</Td>
-                                        <Td>{song.album || '-'}</Td>
-                                        <Td fontFamily="monospace">
-                                            {Math.floor(song.duration / 60)}:{(song.duration % 60).toString().padStart(2, '0')}
-                                        </Td>
-                                        <Td>
-                                            <IconButton
-                                                icon={<FiTrash2 />}
-                                                size="sm"
-                                                colorScheme="red"
-                                                variant="ghost"
-                                                onClick={() => handleDeleteSong(song.id)}
-                                                aria-label="Remove song"
-                                            />
-                                        </Td>
-                                    </Tr>
-                                ))}
+                                <SortableContext
+                                    items={sortedSongs.map(s => s.id)}
+                                    strategy={verticalListSortingStrategy}
+                                >
+                                    {sortedSongs.map((song, index) => (
+                                        <SortableSongRow
+                                            key={song.id}
+                                            song={song}
+                                            index={playlist.songs.indexOf(song)}
+                                            handlePlaySong={handlePlaySong}
+                                            handleDeleteSong={handleDeleteSong}
+                                        />
+                                    ))}
+                                </SortableContext>
                             </Tbody>
                         </Table>
                     </Box>

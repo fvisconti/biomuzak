@@ -219,3 +219,26 @@ func RemoveSongFromPlaylist(db *sql.DB, playlistID int, songID int) error {
 
 	return tx.Commit()
 }
+
+// GetOrCreatePlaylist retrieves a playlist by name for a user, or creates it if it doesn't exist.
+func GetOrCreatePlaylist(db *sql.DB, userID int, name string) (*models.Playlist, error) {
+	// Try to find existing playlist
+	query := `SELECT id, user_id, name, created_at, updated_at FROM playlists WHERE user_id = $1 AND name = $2`
+	playlist := &models.Playlist{}
+	err := db.QueryRow(query, userID, name).Scan(
+		&playlist.ID,
+		&playlist.UserID,
+		&playlist.Name,
+		&playlist.CreatedAt,
+		&playlist.UpdatedAt,
+	)
+	if err == nil {
+		return playlist, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, err
+	}
+
+	// Create new playlist if not found
+	return CreatePlaylist(db, userID, name)
+}

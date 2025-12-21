@@ -8,6 +8,7 @@ import Library from './pages/Library';
 import MainLayout from './components/Layout/MainLayout';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { PlayerProvider } from './context/PlayerContext';
+import { DragProvider } from './context/DragContext';
 import PlayerBar from './components/Layout/PlayerBar';
 
 // Protected Route Component
@@ -29,53 +30,55 @@ const App = () => {
   return (
     <AuthProvider>
       <PlayerProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+        <DragProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
 
-            <Route path="/" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Navigate to="/upload" replace />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
+              <Route path="/" element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Navigate to="/library" replace />
+                  </MainLayout>
+                </ProtectedRoute>
+              } />
 
-            <Route path="/upload" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Upload />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
+              <Route path="/upload" element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Upload />
+                  </MainLayout>
+                </ProtectedRoute>
+              } />
 
-            <Route path="/playlists" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Playlists />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
+              <Route path="/playlists" element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Playlists />
+                  </MainLayout>
+                </ProtectedRoute>
+              } />
 
-            <Route path="/playlists/:playlistID" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <PlaylistDetails />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
+              <Route path="/playlists/:playlistID" element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <PlaylistDetails />
+                  </MainLayout>
+                </ProtectedRoute>
+              } />
 
-            <Route path="/library" element={
-              <ProtectedRoute>
-                <MainLayout>
-                  <Library />
-                </MainLayout>
-              </ProtectedRoute>
-            } />
-          </Routes>
-          <PlayerBar />
-        </Router>
+              <Route path="/library" element={
+                <ProtectedRoute>
+                  <MainLayout>
+                    <Library />
+                  </MainLayout>
+                </ProtectedRoute>
+              } />
+            </Routes>
+            <PlayerBar />
+          </Router>
+        </DragProvider>
       </PlayerProvider>
     </AuthProvider>
   );

@@ -49,6 +49,7 @@ const FileUploader = () => {
     const [progress, setProgress] = useState(0);
     const [playlists, setPlaylists] = useState([]);
     const [selectedPlaylist, setSelectedPlaylist] = useState(location.state?.playlistID || '');
+    const [newPlaylistName, setNewPlaylistName] = useState('');
 
     const { token } = useAuth();
     const toast = useToast();
@@ -102,8 +103,10 @@ const FileUploader = () => {
 
         const formData = new FormData();
         formData.append('files', fileToUpload);
-        if (selectedPlaylist) {
+        if (selectedPlaylist && selectedPlaylist !== 'NEW') {
             formData.append('playlist_id', selectedPlaylist);
+        } else if (newPlaylistName) {
+            formData.append('new_playlist_name', newPlaylistName);
         }
 
         try {
@@ -163,6 +166,14 @@ const FileUploader = () => {
     const onDrop = useCallback(async (acceptedFiles, fileRejections, event) => {
         let newFiles = [];
         const items = event.dataTransfer ? event.dataTransfer.items : [];
+
+        // Detect folder name if a single folder was dropped
+        if (items && items.length === 1 && items[0].webkitGetAsEntry().isDirectory) {
+            const entry = items[0].webkitGetAsEntry();
+            setNewPlaylistName(entry.name);
+            setSelectedPlaylist('NEW');
+        }
+
         if (items && items.length > 0 && items[0].webkitGetAsEntry) {
             const entries = [];
             for (let i = 0; i < items.length; i++) {
@@ -184,7 +195,17 @@ const FileUploader = () => {
 
     // Handle manual folder selection via the hidden input
     const handleFolderSelect = (e) => {
-        if (e.target.files) {
+        if (e.target.files && e.target.files.length > 0) {
+            // Try to get folder name from the first file's path
+            const firstFile = e.target.files[0];
+            const relativePath = firstFile.webkitRelativePath;
+            if (relativePath) {
+                const folderName = relativePath.split('/')[0];
+                if (folderName) {
+                    setNewPlaylistName(folderName);
+                    setSelectedPlaylist('NEW');
+                }
+            }
             handleFilesAdded(Array.from(e.target.files));
         }
     };
@@ -208,16 +229,41 @@ const FileUploader = () => {
             {/* Playlist Selection */}
             <Box>
                 <Text mb={2} fontWeight="bold">Add to Playlist (Optional)</Text>
-                <Select
-                    placeholder="Select playlist..."
-                    value={selectedPlaylist}
-                    onChange={(e) => setSelectedPlaylist(e.target.value)}
-                    bg="gray.700"
-                >
-                    {playlists.map(pl => (
-                        <option key={pl.id} value={pl.id}>{pl.name}</option>
-                    ))}
-                </Select>
+                <HStack spacing={4}>
+                    <Select
+                        placeholder="Select playlist..."
+                        value={selectedPlaylist}
+                        onChange={(e) => {
+                            setSelectedPlaylist(e.target.value);
+                            if (e.target.value !== 'NEW') setNewPlaylistName('');
+                        }}
+                        bg="gray.700"
+                        flex="1"
+                    >
+                        {playlists.map(pl => (
+                            <option key={pl.id} value={pl.id}>{pl.name}</option>
+                        ))}
+                        <option value="NEW">+ Create New Playlist</option>
+                    </Select>
+
+                    {selectedPlaylist === 'NEW' && (
+                        <Box flex="1">
+                            <input
+                                placeholder="Enter playlist name..."
+                                value={newPlaylistName}
+                                onChange={(e) => setNewPlaylistName(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '8px 12px',
+                                    backgroundColor: '#2D3748',
+                                    borderRadius: '6px',
+                                    border: '1px solid #4A5568',
+                                    color: 'white'
+                                }}
+                            />
+                        </Box>
+                    )}
+                </HStack>
             </Box>
 
             {/* Dropzone */}

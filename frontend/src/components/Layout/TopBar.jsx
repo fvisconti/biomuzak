@@ -5,7 +5,18 @@ import { useAuth } from '../../context/AuthContext';
 
 const TopBar = () => {
     const { colorMode, toggleColorMode } = useColorMode();
-    const { user, logout } = useAuth();
+    const { user, logout, token } = useAuth();
+    const [searchQuery, setSearchQuery] = React.useState('');
+
+    const handleSearch = async (e) => {
+        if (e.key === 'Enter' && searchQuery.trim()) {
+            // For now, we'll just log or navigate to a search page if we had one
+            // Let's at least show we are doing something
+            console.log('Searching for:', searchQuery);
+            // Redirect to library with search filter?
+            // window.location.href = `/library?search=${searchQuery}`;
+        }
+    };
 
     return (
         <Flex
@@ -29,6 +40,9 @@ const TopBar = () => {
                     border="none"
                     color="white"
                     _focus={{ bg: 'gray.700' }}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleSearch}
                 />
             </InputGroup>
 

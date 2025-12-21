@@ -61,7 +61,7 @@ Thank you for your interest in contributing to biomuzak! This document provides 
 5. **Start development services**:
    ```bash
    # Terminal 1: Database
-   docker-compose up postgres
+   docker compose up postgres
    
    # Terminal 2: Audio processor
    cd audio-processor
@@ -296,7 +296,7 @@ def test_process_audio_success(mock_loader_class):
 When adding features that span multiple components:
 
 1. Write unit tests for each component
-2. Add integration tests using docker-compose
+2. Add integration tests using docker compose
 3. Test the full workflow (e.g., upload → process → store → retrieve)
 
 ## Pull Request Process
@@ -322,10 +322,10 @@ When adding features that span multiple components:
 
 3. **Test with Docker**:
    ```bash
-   docker-compose build
-   docker-compose up -d
+   docker compose build
+   docker compose up -d
    # Test the full application
-   docker-compose down
+   docker compose down
    ```
 
 4. **Check formatting**:
@@ -404,7 +404,7 @@ biomuzak/
 │   ├── main.py         # FastAPI application
 │   └── test_main.py    # Tests
 ├── Dockerfile          # Go backend Docker image
-├── docker-compose.yml  # Full stack orchestration
+├── docker compose.yml  # Full stack orchestration
 └── README.md          # Main documentation
 ```
 

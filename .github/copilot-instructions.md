@@ -119,11 +119,11 @@ biomuzak is a music organizer, player, and streamer application consisting of:
 ### Local Development
 1. Set up PostgreSQL database
 2. Copy `.env.example` to `.env` and configure
-3. Build and run audio processor: `docker-compose up audio-processor`
+3. Build and run audio processor: `docker compose up audio-processor`
 4. Run the Go server: `go run cmd/server/main.go`
 
 ### Docker Deployment
-- Use `docker-compose.yml` for complete stack deployment
+- Use `docker compose.yml` for complete stack deployment
 - Includes PostgreSQL, Go server, and audio processor
 
 ## Important Notes

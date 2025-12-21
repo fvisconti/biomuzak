@@ -64,9 +64,9 @@ services:
       - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@local}
       # MinIO Configuration
       - MINIO_ENDPOINT=minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET=music
+      - MINIO_ACCESS_KEY=${MINIO_ROOT_USER}
+      - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
+      - MINIO_BUCKET=${MINIO_BUCKET}
       - MINIO_USE_SSL=false
     volumes:
       - upload_data:/root/uploads
@@ -103,10 +103,10 @@ services:
       - "9000:9000"
       - "9001:9001"
     volumes:
-      - minio_data:/data
+      - ${MINIO_DATA_DIR:-./minio_data}:/data
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     command: server /data --console-address ":9001"
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
@@ -122,14 +122,13 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin; /usr/bin/mc mb myminio/music; /usr/bin/mc anonymous set public myminio/music; exit 0; "
+      /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; /usr/bin/mc mb myminio/${MINIO_BUCKET}; /usr/bin/mc anonymous set public myminio/${MINIO_BUCKET}; exit 0; "
     networks:
       - biomuzak-network
 
 volumes:
   postgres_data:
   upload_data:
-  minio_data:
 
 
 networks:

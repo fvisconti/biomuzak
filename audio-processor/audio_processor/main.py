@@ -54,7 +54,7 @@ async def process_audio(file: UploadFile = File(...)):
         mfcc_std = np.std(mfccs, axis=0)
 
         # Spectral Contrast
-        sc_algo = es.SpectralContrast()
+        sc_algo = es.SpectralContrast(frameSize=1024)
         scs = []
         for frame in es.FrameGenerator(audio, frameSize=1024, hopSize=512, startFromZero=True):
              spec = spectrum(w_hann(frame))

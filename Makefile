@@ -81,7 +81,7 @@ url:
 	@echo "API: http://localhost:$${BACKEND_PORT:-8080}"
 
 # Open a psql shell inside the Postgres container
-# Relies on docker-compose container_name: music_db
+# Relies on docker compose container_name: music_db
 psql db-psql:
 	@docker exec -it music_db sh -lc 'psql -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"'
 

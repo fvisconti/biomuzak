@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"go-postgres-example/pkg/config"
+	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/metadata"
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/storage"
@@ -43,19 +44,30 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse optional playlist ID
-	var playlistID int
-	if playlistIDStr := r.MultipartForm.Value["playlist_id"]; len(playlistIDStr) > 0 {
-		fmt.Sscanf(playlistIDStr[0], "%d", &playlistID)
-	}
-
 	// Get UserID from context (set by auth middleware)
-	// We need to import the middleware package
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		// Should have been caught by middleware, but safe fallback
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
+	}
+
+	// Parse optional playlist ID or name
+	var playlistID int
+	if playlistIDStr := r.MultipartForm.Value["playlist_id"]; len(playlistIDStr) > 0 && playlistIDStr[0] != "" {
+		fmt.Sscanf(playlistIDStr[0], "%d", &playlistID)
+	}
+
+	if playlistID == 0 {
+		if newPlaylistName := r.MultipartForm.Value["new_playlist_name"]; len(newPlaylistName) > 0 && newPlaylistName[0] != "" {
+			playlist, err := db.GetOrCreatePlaylist(h.DB, userID, newPlaylistName[0])
+			if err != nil {
+				log.Printf("Error getting or creating playlist: %v", err)
+				http.Error(w, "Failed to create playlist", http.StatusInternalServerError)
+				return
+			}
+			playlistID = playlist.ID
+		}
 	}
 
 	tempDir, err := os.MkdirTemp("", "music-uploads-*")
