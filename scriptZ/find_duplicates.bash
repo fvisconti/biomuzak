@@ -1,65 +1,65 @@
 #!/bin/bash
 
-# Check if an argument is provided
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <directory>"
+# Check if correct number of arguments are provided
+if [ $# -ne 2 ]; then
+    echo "Usage: $0 <directory> <output_file>"
     exit 1
 fi
+
+# Input directory and output file
+root_dir="$1"
+output_file="$2"
 
 # Check if the provided argument is a directory
-if [ ! -d "$1" ]; then
-    echo "Error: '$1' is not a directory"
+if [ ! -d "$root_dir" ]; then
+    echo "Error: '$root_dir' is not a directory"
     exit 1
 fi
 
-# Input directory
-root_dir="$1"
-
-# Output file
-output_file="dump_duplicates.txt"
-> "$output_file"  # Clear the file if it exists
+# Clear the output file if it exists
+> "$output_file"
 
 # Temporary file for storing filenames and their full paths
 temp_file=$(mktemp)
 
-# Collect all filenames and their paths
-find "$root_dir" -type f -exec bash -c 'printf "%s|%s\n" "$(basename "$1")" "$1"' _ {} \; > "$temp_file"
+echo "Collecting file list from $root_dir..."
+# Collect all filenames and their paths efficiently
+# Output format: basename|fullpath
+find "$root_dir" -type f -exec bash -c '
+    for file; do
+        printf "%s|%s\n" "${file##*/}" "$file"
+    done
+' _ {} + > "$temp_file"
 
-# Debug: Print temp_file contents
-echo "Collected files:"
-cat "$temp_file"
+echo "Processing duplicates..."
 
-# Function to find duplicates for a single filename
-find_duplicates() {
-    local filename="$1"
-
-    # Search for all occurrences of the filename
-    matches=$(grep -i -F "|$filename" "$temp_file" | cut -d'|' -f2)
-    count=$(echo "$matches" | wc -l)
-
-    # Debug: Print matches for the current file
-    echo "Checking filename: $filename"
-    echo "$matches"
-
-    # If more than one occurrence is found, log the duplicates
-    if [ "$count" -gt 1 ]; then
-        echo "$matches" >> "$output_file"
-    fi
+# Use awk to find duplicates and group them on the same line
+# Items are grouped by filename (case-insensitive)
+# Separated by 4 empty spaces as requested
+awk '
+{
+    # Robustly split into filename and path at the first pipe
+    p = index($0, "|")
+    if (p == 0) next
+    fname = substr($0, 1, p-1)
+    path = substr($0, p+1)
+    
+    fname_lower = tolower(fname)
+    if (paths[fname_lower] == "") {
+        paths[fname_lower] = path
+    } else {
+        paths[fname_lower] = paths[fname_lower] "    " path
+    }
+    count[fname_lower]++
 }
-
-export -f find_duplicates
-export temp_file
-export output_file
-
-# Determine the number of processors to use (leave one out)
-if command -v nproc &>/dev/null; then
-    num_jobs=$(nproc --ignore=1)
-else
-    num_jobs=$(($(sysctl -n hw.ncpu) - 1))  # macOS alternative
-fi
-
-# Extract unique filenames and process them in parallel
-cut -d'|' -f1 "$temp_file" | sort | uniq | parallel -j "$num_jobs" find_duplicates {}
+END {
+    for (f in count) {
+        if (count[f] > 1) {
+            print paths[f]
+        }
+    }
+}
+' "$temp_file" >> "$output_file"
 
 # Clean up temporary file
 rm -f "$temp_file"
