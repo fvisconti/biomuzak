@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/models"
@@ -33,10 +34,11 @@ type ProcessorAPI interface {
 
 // Processor handles the metadata processing logic.
 type Processor struct {
-	DB       *sql.DB
-	Cfg      *config.Config
-	MBClient musicbrainz.Clienter
-	Storage  storage.StorageService
+	DB         *sql.DB
+	Cfg        *config.Config
+	MBClient   musicbrainz.Clienter
+	Storage    storage.StorageService
+	httpClient *http.Client
 }
 
 // NewProcessor creates a new Processor.
@@ -45,7 +47,15 @@ func NewProcessor(db *sql.DB, cfg *config.Config, storage storage.StorageService
 	if err != nil {
 		log.Fatalf("Failed to create MusicBrainz client: %v", err)
 	}
-	return &Processor{DB: db, Cfg: cfg, MBClient: mbClient, Storage: storage}
+	return &Processor{
+		DB:       db,
+		Cfg:      cfg,
+		MBClient: mbClient,
+		Storage:  storage,
+		// A bounded timeout prevents a slow/hung audio processor from leaking
+		// goroutines and holding temp files on disk indefinitely.
+		httpClient: &http.Client{Timeout: 5 * time.Minute},
+	}
 }
 
 // ProcessFile orchestrates the entire process for a single file.
@@ -217,9 +227,13 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	// Send the request
+	// Send the request using the shared client (which enforces a timeout).
+	// Fall back to a default client if none is configured (e.g. in tests).
+	client := p.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Minute}
+	}
 	log.Printf("Calling audio processor at %s for file %s", url, filePath)
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to audio processor: %w", err)
@@ -349,10 +363,17 @@ func (p *Processor) songExists(hash string) (bool, int, error) {
 }
 
 func (p *Processor) findOrCreateGenre(name string) (int, error) {
+	// Use an atomic upsert to avoid the check-then-insert race where two
+	// concurrent uploads of the same new genre both try to INSERT and one
+	// fails with a unique-violation.
 	var genreID int
-	err := p.DB.QueryRow("SELECT id FROM genres WHERE name = $1", name).Scan(&genreID)
+	err := p.DB.QueryRow(
+		"INSERT INTO genres (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id",
+		name,
+	).Scan(&genreID)
 	if err == sql.ErrNoRows {
-		err = p.DB.QueryRow("INSERT INTO genres (name) VALUES ($1) RETURNING id", name).Scan(&genreID)
+		// A concurrent insert won the race; fetch the existing row.
+		err = p.DB.QueryRow("SELECT id FROM genres WHERE name = $1", name).Scan(&genreID)
 		if err != nil {
 			return 0, err
 		}

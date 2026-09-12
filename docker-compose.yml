@@ -68,6 +68,9 @@ services:
       - MINIO_SECRET_KEY=${MINIO_ROOT_PASSWORD}
       - MINIO_BUCKET=${MINIO_BUCKET}
       - MINIO_USE_SSL=false
+      # Tidal Integration (optional; leave blank to disable)
+      - TIDAL_CLIENT_ID=${TIDAL_CLIENT_ID:-}
+      - TIDAL_CLIENT_SECRET=${TIDAL_CLIENT_SECRET:-}
     volumes:
       - upload_data:/root/uploads
     healthcheck:

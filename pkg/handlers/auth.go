@@ -3,24 +3,30 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
+	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
+	"go-postgres-example/pkg/storage"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgconn"
 )
 
 // AuthHandler holds the dependencies for the auth handlers
 type AuthHandler struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB      *sql.DB
+	Cfg     *config.Config
+	Storage storage.StorageService
 }
 
 // NewAuthHandler creates a new AuthHandler
-func NewAuthHandler(db *sql.DB, cfg *config.Config) *AuthHandler {
-	return &AuthHandler{DB: db, Cfg: cfg}
+func NewAuthHandler(db *sql.DB, cfg *config.Config, s storage.StorageService) *AuthHandler {
+	return &AuthHandler{DB: db, Cfg: cfg, Storage: s}
 }
 
 // RegisterRequest represents the request body for user registration
@@ -66,6 +72,13 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	_, err = h.DB.Exec("INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3)", req.Username, req.Email, hashedPassword)
 	if err != nil {
+		// A concurrent registration may have won the race between our
+		// existence check and this insert. Surface it as a 409, not a 500.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			SendError(w, "Username or email already exists", http.StatusConflict)
+			return
+		}
 		SendError(w, "Failed to create user", http.StatusInternalServerError)
 		return
 	}
@@ -236,6 +249,13 @@ func (h *AuthHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Find songs that only this user references BEFORE deleting the user, so
+	// we can garbage-collect them (DB rows + storage objects) afterward.
+	orphaned, err := db.GetOrphanedSongsForUser(h.DB, userID)
+	if err != nil {
+		log.Printf("Warning: failed to find orphaned songs for user %d: %v", userID, err)
+	}
+
 	res, err := h.DB.Exec("DELETE FROM users WHERE id = $1", userID)
 	if err != nil {
 		SendError(w, "Failed to delete user", http.StatusInternalServerError)
@@ -246,5 +266,24 @@ func (h *AuthHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		SendError(w, "User not found", http.StatusNotFound)
 		return
 	}
+
+	// Garbage-collect songs that no other user references.
+	if len(orphaned) > 0 {
+		ids := make([]int, len(orphaned))
+		for i, s := range orphaned {
+			ids[i] = s.ID
+		}
+		if err := db.DeleteSongs(h.DB, ids); err != nil {
+			log.Printf("Warning: failed to delete orphaned songs for user %d: %v", userID, err)
+		}
+		if h.Storage != nil {
+			for _, s := range orphaned {
+				if err := h.Storage.DeleteObject(r.Context(), s.FilePath); err != nil {
+					log.Printf("Warning: failed to delete storage object %s: %v", s.FilePath, err)
+				}
+			}
+		}
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

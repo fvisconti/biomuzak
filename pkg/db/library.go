@@ -105,6 +105,46 @@ func DeleteUserSong(db *sql.DB, userID int, songID int) error {
 	return err
 }
 
+// GetOrphanedSongsForUser returns the IDs and file paths of songs that are
+// referenced ONLY by the given user (no other user has them in their library).
+// These become orphaned when the user is deleted and can be garbage-collected.
+func GetOrphanedSongsForUser(db *sql.DB, userID int) ([]models.Song, error) {
+	query := `
+		SELECT s.id, s.file_path
+		FROM songs s
+		JOIN user_songs us ON us.song_id = s.id
+		WHERE us.user_id = $1
+		  AND NOT EXISTS (
+			SELECT 1 FROM user_songs us2
+			WHERE us2.song_id = s.id AND us2.user_id <> $1
+		  )
+	`
+	rows, err := db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var songs []models.Song
+	for rows.Next() {
+		var song models.Song
+		if err := rows.Scan(&song.ID, &song.FilePath); err != nil {
+			return nil, err
+		}
+		songs = append(songs, song)
+	}
+	return songs, nil
+}
+
+// DeleteSongs removes songs by ID (and cascades their embeddings).
+func DeleteSongs(db *sql.DB, songIDs []int) error {
+	if len(songIDs) == 0 {
+		return nil
+	}
+	_, err := db.Exec("DELETE FROM songs WHERE id = ANY($1)", songIDs)
+	return err
+}
+
 // UpdateSongGenre updates the genre of a song
 func UpdateSongGenre(db *sql.DB, userID int, songID int, genreName string) error {
 	// First, check if user owns this song
@@ -117,12 +157,12 @@ func UpdateSongGenre(db *sql.DB, userID int, songID int, genreName string) error
 		return fmt.Errorf("song not found in user's library")
 	}
 
-	// Find or create genre
+	// Find or create genre atomically to avoid a check-then-insert race.
 	var genreID int
-	err = db.QueryRow(`SELECT id FROM genres WHERE name = $1`, genreName).Scan(&genreID)
+	err = db.QueryRow(`INSERT INTO genres (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id`, genreName).Scan(&genreID)
 	if err == sql.ErrNoRows {
-		// Create new genre
-		err = db.QueryRow(`INSERT INTO genres (name) VALUES ($1) RETURNING id`, genreName).Scan(&genreID)
+		// A concurrent insert won the race; fetch the existing row.
+		err = db.QueryRow(`SELECT id FROM genres WHERE name = $1`, genreName).Scan(&genreID)
 		if err != nil {
 			return err
 		}
@@ -136,9 +176,11 @@ func UpdateSongGenre(db *sql.DB, userID int, songID int, genreName string) error
 	return err
 }
 
-// GetAllArtists retrieves all artists from the database
+// GetAllArtists retrieves all distinct artists from the songs table.
+// The dedicated artists/albums tables are not part of the schema, so we
+// aggregate from songs to keep search functional.
 func GetAllArtists(db *sql.DB) ([]*models.Artist, error) {
-	rows, err := db.Query("SELECT id, name FROM artists ORDER BY name")
+	rows, err := db.Query("SELECT DISTINCT artist FROM songs WHERE artist IS NOT NULL AND artist != '' ORDER BY artist")
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +189,7 @@ func GetAllArtists(db *sql.DB) ([]*models.Artist, error) {
 	var artists []*models.Artist
 	for rows.Next() {
 		var artist models.Artist
-		if err := rows.Scan(&artist.ID, &artist.Name); err != nil {
+		if err := rows.Scan(&artist.Name); err != nil {
 			return nil, err
 		}
 		artists = append(artists, &artist)
@@ -156,12 +198,13 @@ func GetAllArtists(db *sql.DB) ([]*models.Artist, error) {
 	return artists, nil
 }
 
-// Search performs a search for artists, albums, and songs
+// Search performs a search for artists, albums, and songs by aggregating
+// from the songs table (the dedicated artists/albums tables do not exist).
 func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*models.Song, error) {
-	query = "%" + query + "%"
+	pattern := "%" + query + "%"
 
-	// Search artists
-	artistRows, err := db.Query("SELECT id, name FROM artists WHERE name ILIKE $1", query)
+	// Search artists (distinct artist names)
+	artistRows, err := db.Query("SELECT DISTINCT artist FROM songs WHERE artist IS NOT NULL AND artist != '' AND artist ILIKE $1 ORDER BY artist", pattern)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -170,14 +213,14 @@ func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*mod
 	var artists []*models.Artist
 	for artistRows.Next() {
 		var artist models.Artist
-		if err := artistRows.Scan(&artist.ID, &artist.Name); err != nil {
+		if err := artistRows.Scan(&artist.Name); err != nil {
 			return nil, nil, nil, err
 		}
 		artists = append(artists, &artist)
 	}
 
-	// Search albums
-	albumRows, err := db.Query("SELECT id, name, artist FROM albums WHERE name ILIKE $1", query)
+	// Search albums (distinct album/artist pairs)
+	albumRows, err := db.Query("SELECT DISTINCT album, artist FROM songs WHERE album IS NOT NULL AND album != '' AND album ILIKE $1 ORDER BY album", pattern)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -186,14 +229,14 @@ func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*mod
 	var albums []*models.Album
 	for albumRows.Next() {
 		var album models.Album
-		if err := albumRows.Scan(&album.ID, &album.Name, &album.Artist); err != nil {
+		if err := albumRows.Scan(&album.Name, &album.Artist); err != nil {
 			return nil, nil, nil, err
 		}
 		albums = append(albums, &album)
 	}
 
 	// Search songs
-	songRows, err := db.Query("SELECT id, title, artist, album FROM songs WHERE title ILIKE $1", query)
+	songRows, err := db.Query("SELECT id, title, artist, album FROM songs WHERE title ILIKE $1 ORDER BY title LIMIT 100", pattern)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -224,11 +267,46 @@ func GetSongFilePath(db *sql.DB, songID int) (string, error) {
 	return filePath, nil
 }
 
+// GetSongFilePathForUser retrieves the file path for a song, but only if the
+// given user has the song in their library. This prevents one user from
+// streaming/downloading another user's private uploads (IDOR).
+func GetSongFilePathForUser(db *sql.DB, userID, songID int) (string, error) {
+	var filePath string
+	err := db.QueryRow(`
+		SELECT s.file_path
+		FROM songs s
+		JOIN user_songs us ON us.song_id = s.id
+		WHERE s.id = $1 AND us.user_id = $2`, songID, userID).Scan(&filePath)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("song with ID %d not found", songID)
+		}
+		return "", err
+	}
+	return filePath, nil
+}
+
 // GetSongByID retrieves song details by its ID
 func GetSongByID(db *sql.DB, songID int) (*models.Song, error) {
 	var song models.Song
 	query := `SELECT id, title, artist, album, file_path FROM songs WHERE id = $1`
 	err := db.QueryRow(query, songID).Scan(&song.ID, &song.Title, &song.Artist, &song.Album, &song.FilePath)
+	if err != nil {
+		return nil, err
+	}
+	return &song, nil
+}
+
+// GetSongByIDForUser retrieves song details by ID, but only if the given user
+// has the song in their library (IDOR protection).
+func GetSongByIDForUser(db *sql.DB, userID, songID int) (*models.Song, error) {
+	var song models.Song
+	query := `
+		SELECT s.id, s.title, s.artist, s.album, s.file_path
+		FROM songs s
+		JOIN user_songs us ON us.song_id = s.id
+		WHERE s.id = $1 AND us.user_id = $2`
+	err := db.QueryRow(query, songID, userID).Scan(&song.ID, &song.Title, &song.Artist, &song.Album, &song.FilePath)
 	if err != nil {
 		return nil, err
 	}

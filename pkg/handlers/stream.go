@@ -29,8 +29,8 @@ func NewStreamHandler(db *sql.DB, cfg *config.Config, s storage.StorageService) 
 
 // StreamSongHandler streams a song's audio content
 func (h *StreamHandler) StreamSongHandler(w http.ResponseWriter, r *http.Request) {
-	// 1. Auth check (optional, but good practice. Maybe we want public links later? For now, strict.)
-	_, ok := middleware.GetUserIDFromContext(r.Context())
+	// 1. Auth check
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -43,8 +43,8 @@ func (h *StreamHandler) StreamSongHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// 2. Get file path from DB
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	// 2. Get file path from DB, scoped to the requesting user (IDOR protection)
+	filePath, err := db.GetSongFilePathForUser(h.DB, userID, songID)
 	if err != nil {
 		http.Error(w, "Song not found", http.StatusNotFound)
 		return
@@ -72,7 +72,7 @@ func (h *StreamHandler) StreamSongHandler(w http.ResponseWriter, r *http.Request
 
 // DownloadSongHandler downloads a song file
 func (h *StreamHandler) DownloadSongHandler(w http.ResponseWriter, r *http.Request) {
-	_, ok := middleware.GetUserIDFromContext(r.Context())
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -85,7 +85,8 @@ func (h *StreamHandler) DownloadSongHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	song, err := db.GetSongByID(h.DB, songID)
+	// Scoped to the requesting user (IDOR protection)
+	song, err := db.GetSongByIDForUser(h.DB, userID, songID)
 	if err != nil {
 		http.Error(w, "Song not found", http.StatusNotFound)
 		return

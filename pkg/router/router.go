@@ -13,11 +13,11 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler, tidalHandler *handlers.TidalHandler, exportHandler *handlers.ExportHandler, corsAllowedOrigins string) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Enable CORS for cross-origin requests from the frontend
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(corsAllowedOrigins))
 
 	// Health check endpoint (no auth required)
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -80,6 +80,28 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
 
+		})
+
+		// Tidal routes
+		r.Route("/api/tidal", func(r chi.Router) {
+			r.Post("/pair/start", tidalHandler.PairStartHandler)
+			r.Get("/pair/status", tidalHandler.PairStatusHandler)
+			r.Get("/status", tidalHandler.StatusHandler)
+			r.Put("/settings", tidalHandler.SettingsHandler)
+			r.Delete("/connection", tidalHandler.DisconnectHandler)
+
+			r.Get("/library/{kind}", tidalHandler.LibraryHandler)
+			r.Get("/albums/{albumID}", tidalHandler.AlbumHandler)
+			r.Get("/playlists/{playlistID}", tidalHandler.PlaylistHandler)
+
+			r.Post("/import", tidalHandler.ImportHandler)
+			r.Get("/import/status", tidalHandler.ImportStatusHandler)
+		})
+
+		// Export routes
+		r.Route("/api/export", func(r chi.Router) {
+			r.Post("/", exportHandler.StartHandler)
+			r.Get("/status", exportHandler.StatusHandler)
 		})
 
 		// Admin-only routes (root under /api/admin)

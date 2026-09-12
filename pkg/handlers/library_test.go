@@ -34,14 +34,14 @@ func TestGetLibraryHandler(t *testing.T) {
 
 	// Create a new router
 	cfg := &config.Config{JWTSecret: "default-secret"}
-	authHandler := handlers.NewAuthHandler(db, cfg)
+	authHandler := handlers.NewAuthHandler(db, cfg, nil)
 	uploadHandler := handlers.NewUploadHandler(db, cfg, nil)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(db, cfg, nil)
 	songHandler := handlers.NewSongHandler(db, cfg)
 	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
 	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, "")
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")
@@ -72,14 +72,14 @@ func TestRateSongHandler(t *testing.T) {
 
 	// Create a new router
 	cfg := &config.Config{JWTSecret: "default-secret"}
-	authHandler := handlers.NewAuthHandler(db, cfg)
+	authHandler := handlers.NewAuthHandler(db, cfg, nil)
 	uploadHandler := handlers.NewUploadHandler(db, cfg, nil)
 	libraryHandler := handlers.NewLibraryHandler(db, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(db, cfg, nil)
 	songHandler := handlers.NewSongHandler(db, cfg)
 	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
 	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, "")
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")

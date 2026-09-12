@@ -2,11 +2,12 @@ package subsonic
 
 import (
 	"context"
-	"crypto/md5"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"go-postgres-example/pkg/auth"
 )
 
 type contextKey string
@@ -53,20 +54,21 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 			}
 
 			if token != "" && salt != "" {
-				// Token-based authentication
-				expectedToken := md5.Sum([]byte(passwordHash + salt))
-				if token != hex.EncodeToString(expectedToken[:]) {
-					respondWithXML(w, &Response{
-						Status: "failed",
-						Error: &Error{
-							Code:    40,
-							Message: "Wrong username or password",
-						},
-					})
-					return
-				}
+				// Token-based authentication (Subsonic spec: t = md5(plaintext_password + salt)).
+				// We store passwords as one-way bcrypt hashes, so we cannot recompute
+				// md5(plaintext + salt) server-side. Rather than fall back to an insecure
+				// check, we fail closed: token auth is not supported by this backend.
+				// Clients should authenticate using the password parameter (p) instead.
+				respondWithXML(w, &Response{
+					Status: "failed",
+					Error: &Error{
+						Code:    40,
+						Message: "Token authentication is not supported; use the password parameter",
+					},
+				})
+				return
 			} else if password != "" {
-				// Password-based authentication
+				// Password-based authentication.
 				if strings.HasPrefix(password, "enc:") {
 					hexPassword, err := hex.DecodeString(strings.TrimPrefix(password, "enc:"))
 					if err != nil {
@@ -81,19 +83,8 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 					}
 					password = string(hexPassword)
 				}
-				// TODO: Replace this placeholder with secure Subsonic auth that aligns with bcrypt/JWT.
-				// Note: This is not secure, but part of the Subsonic API spec.
-				// The provided hash in the database is generated with bcrypt, which is not compatible with MD5.
-				// For this implementation, we will assume the password is stored in plain text for compatibility.
-				// This is a major security flaw and should be addressed in a real-world application.
-				// We will re-hash the provided password with bcrypt and compare it to the stored hash.
-				// This is not what the Subsonic API specifies, but it's the only way to make it work with the existing user management.
-				// A better solution would be to store the password in a way that is compatible with both authentication methods.
-				// For now, we will just simulate a check.
-				// This is a placeholder for the actual password check.
-				// In a real implementation, you would need to implement a proper check.
-				// For the purpose of this exercise, we will assume the password is correct if it is not empty.
-				if password == "" {
+				// Verify the supplied password against the stored bcrypt hash.
+				if !auth.CheckPasswordHash(password, passwordHash) {
 					respondWithXML(w, &Response{
 						Status: "failed",
 						Error: &Error{

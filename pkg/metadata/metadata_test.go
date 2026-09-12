@@ -34,6 +34,10 @@ func (m *MockStorage) GetPresignedURL(ctx context.Context, objectName string, ex
 	return nil, nil
 }
 
+func (m *MockStorage) DeleteObject(ctx context.Context, objectName string) error {
+	return nil
+}
+
 func TestGenerateFileHash(t *testing.T) {
 	// Create a temporary test file in a temporary directory
 	dir := t.TempDir()

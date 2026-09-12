@@ -5,6 +5,7 @@ import Upload from './pages/Upload';
 import Playlists from './pages/Playlists';
 import PlaylistDetails from './pages/PlaylistDetails';
 import Library from './pages/Library';
+import Tidal from './pages/Tidal';
 import AdminUsers from './pages/AdminUsers';
 import MainLayout from './components/Layout/MainLayout';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -75,6 +76,14 @@ const App = () => {
                   <ProtectedRoute>
                     <MainLayout>
                       <Library />
+                    </MainLayout>
+                  </ProtectedRoute>
+                } />
+
+                <Route path="/tidal" element={
+                  <ProtectedRoute>
+                    <MainLayout>
+                      <Tidal />
                     </MainLayout>
                   </ProtectedRoute>
                 } />

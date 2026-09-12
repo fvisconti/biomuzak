@@ -42,6 +42,14 @@ type Config struct {
 	MinIOSecretKey string
 	MinIOBucket    string
 	MinIOUseSSL    bool
+
+	// CORS: comma-separated list of allowed origins. Empty means "allow all"
+	// (dev convenience); set it to the frontend origin(s) in production.
+	CORSAllowedOrigins string
+
+	// Tidal OAuth (Device Authorization flow)
+	TidalClientID     string
+	TidalClientSecret string
 }
 
 // New creates a new Config struct
@@ -71,6 +79,11 @@ func New() *Config {
 		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
 		MinIOBucket:    getEnv("MINIO_BUCKET", "music"),
 		MinIOUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+
+		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
+
+		TidalClientID:     getEnv("TIDAL_CLIENT_ID", ""),
+		TidalClientSecret: getEnv("TIDAL_CLIENT_SECRET", ""),
 	}
 
 	// Prefer explicit DATABASE_URL if provided

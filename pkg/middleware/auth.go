@@ -16,15 +16,21 @@ func Authenticator(jwtSecret string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			tokenString := ""
+			var tokenString string
 			if authHeader != "" {
+				// When the Authorization header is present, require the Bearer scheme.
+				if !strings.HasPrefix(authHeader, "Bearer ") {
+					http.Error(w, "Could not find bearer token", http.StatusUnauthorized)
+					return
+				}
 				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
 			} else {
+				// Fallback to a query param (used by <audio> elements that can't set headers).
 				tokenString = r.URL.Query().Get("token")
 			}
 
 			if tokenString == "" {
-				http.Error(w, "Authentication required", http.StatusUnauthorized)
+				http.Error(w, "Authorization header is required", http.StatusUnauthorized)
 				return
 			}
 

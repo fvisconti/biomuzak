@@ -4,16 +4,17 @@ import {
     Box, Heading, VStack, Container, Table, Thead, Tbody, Tr, Th, Td,
     Badge, HStack, Icon, IconButton, Spinner, Menu, MenuButton, MenuList, MenuItem,
     Modal, ModalOverlay, ModalContent, ModalHeader, ModalBody, ModalFooter,
-    Button, Select, Input, useToast, Editable, EditablePreview, EditableInput, Text, useColorModeValue
+    Button, Select, Input, Checkbox, Progress, useToast, Editable, EditablePreview, EditableInput, Text, useColorModeValue
 } from '@chakra-ui/react';
-import { FiMusic, FiRefreshCw, FiPlay, FiMoreVertical, FiTrash2, FiPlusCircle, FiDownload } from 'react-icons/fi';
+import { FiMusic, FiRefreshCw, FiPlay, FiMoreVertical, FiTrash2, FiPlusCircle, FiDownload, FiHardDrive } from 'react-icons/fi';
 import { useAuth } from '../context/AuthContext';
+import { startExport, exportStatus } from '../api/tidal';
 import { usePlayer } from '../context/PlayerContext';
 import { usePlaylists } from '../context/PlaylistContext';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
-const DraggableSongRow = ({ song, songs, token, playPlaylist, handleGenreUpdate, setSelectedSong, setShowAddToPlaylist, handleDeleteSong, formatDuration }) => {
+const DraggableSongRow = ({ song, songs, token, playPlaylist, handleGenreUpdate, setSelectedSong, setShowAddToPlaylist, handleDeleteSong, formatDuration, isSelected, onToggleSelect }) => {
     const { attributes, listeners, setNodeRef, transform } = useDraggable({
         id: `track-${song.id}`,
         data: { id: song.id, ...song },
@@ -33,6 +34,14 @@ const DraggableSongRow = ({ song, songs, token, playPlaylist, handleGenreUpdate,
             _hover={{ bg: 'whiteAlpha.50', cursor: 'grab' }}
             bg={transform ? 'gray.700' : 'transparent'}
         >
+            <Td w="40px">
+                <Checkbox
+                    isChecked={!!isSelected}
+                    onChange={() => onToggleSelect(song.id)}
+                    colorScheme="blue"
+                    onPointerDown={(e) => e.stopPropagation()}
+                />
+            </Td>
             <Td>
                 <IconButton
                     icon={<FiPlay />}
@@ -122,9 +131,81 @@ const Library = () => {
     const [showAddToPlaylist, setShowAddToPlaylist] = useState(false);
     const [selectedSong, setSelectedSong] = useState(null);
     const [newPlaylistName, setNewPlaylistName] = useState('');
+    const [selectedIds, setSelectedIds] = useState({});
+    const [exportJob, setExportJob] = useState(null);
+    const exportPollRef = React.useRef(null);
     const { token } = useAuth();
     const { playPlaylist } = usePlayer();
     const toast = useToast();
+
+    React.useEffect(() => () => {
+        if (exportPollRef.current) clearInterval(exportPollRef.current);
+    }, []);
+
+    const toggleSelect = (id) => {
+        setSelectedIds((prev) => {
+            const next = { ...prev };
+            if (next[id]) delete next[id];
+            else next[id] = true;
+            return next;
+        });
+    };
+
+    const allSelected = songs.length > 0 && songs.every((s) => selectedIds[s.id]);
+    const toggleSelectAll = () => {
+        setSelectedIds((prev) => {
+            if (Object.keys(prev).length === songs.length) return {};
+            const next = {};
+            songs.forEach((s) => { next[s.id] = true; });
+            return next;
+        });
+    };
+
+    const startExportPolling = (jobId) => {
+        if (exportPollRef.current) clearInterval(exportPollRef.current);
+        exportPollRef.current = setInterval(async () => {
+            try {
+                const res = await exportStatus(jobId);
+                const job = res.data;
+                setExportJob(job);
+                if (job.status === 'done') {
+                    clearInterval(exportPollRef.current);
+                    exportPollRef.current = null;
+                    toast({
+                        title: `Export complete: ${job.done} written, ${job.skipped} skipped, ${job.failed} failed`,
+                        status: job.failed > 0 ? 'warning' : 'success',
+                        duration: 4000,
+                    });
+                }
+            } catch (e) {
+                // ignore transient errors
+            }
+        }, 1500);
+    };
+
+    const handleExportSelected = async () => {
+        const ids = Object.keys(selectedIds).map(Number);
+        if (ids.length === 0) {
+            toast({ title: 'Select at least one song to export', status: 'warning', duration: 2000 });
+            return;
+        }
+        try {
+            const res = await startExport(ids);
+            setExportJob({
+                id: res.data.jobId,
+                total: ids.length,
+                done: 0,
+                skipped: 0,
+                failed: 0,
+                status: 'running',
+                items: [],
+            });
+            startExportPolling(res.data.jobId);
+            setSelectedIds({});
+        } catch (e) {
+            toast({ title: e.message || 'Failed to start export', status: 'error', duration: 3000 });
+        }
+    };
     const modalBg = useColorModeValue('white', 'gray.800');
     const emptyBorderColor = useColorModeValue('gray.300', 'gray.700');
 
@@ -250,12 +331,23 @@ const Library = () => {
                     <Heading as="h1" size="xl">
                         {searchQuery ? `Search Results for "${searchQuery}"` : `Library (${songs.length})`}
                     </Heading>
-                    <IconButton
-                        icon={<FiRefreshCw />}
-                        onClick={fetchLibrary}
-                        aria-label="Refresh Library"
-                        variant="ghost"
-                    />
+                    <HStack spacing={3}>
+                        <Button
+                            size="sm"
+                            variant="outline"
+                            leftIcon={<FiHardDrive />}
+                            isDisabled={Object.keys(selectedIds).length === 0}
+                            onClick={handleExportSelected}
+                        >
+                            Export {Object.keys(selectedIds).length > 0 ? `${Object.keys(selectedIds).length} ` : ''}selected
+                        </Button>
+                        <IconButton
+                            icon={<FiRefreshCw />}
+                            onClick={fetchLibrary}
+                            aria-label="Refresh Library"
+                            variant="ghost"
+                        />
+                    </HStack>
                 </HStack>
 
                 {loading ? (
@@ -277,6 +369,14 @@ const Library = () => {
                         <Table variant="simple" size="sm">
                             <Thead>
                                 <Tr>
+                                    <Th w="40px">
+                                        <Checkbox
+                                            isChecked={allSelected}
+                                            onChange={toggleSelectAll}
+                                            colorScheme="blue"
+                                            aria-label="Select all"
+                                        />
+                                    </Th>
                                     <Th w="40px"></Th>
                                     <Th cursor="pointer" onClick={() => setSortBy('title')}>
                                         Title {sortBy === 'title' && '↓'}
@@ -310,10 +410,40 @@ const Library = () => {
                                         setShowAddToPlaylist={setShowAddToPlaylist}
                                         handleDeleteSong={handleDeleteSong}
                                         formatDuration={formatDuration}
+                                        isSelected={!!selectedIds[song.id]}
+                                        onToggleSelect={toggleSelect}
                                     />
                                 ))}
                             </Tbody>
                         </Table>
+                    </Box>
+                )}
+
+                {exportJob && (
+                    <Box
+                        p={4}
+                        border="1px solid"
+                        borderColor={emptyBorderColor}
+                        borderRadius="md"
+                    >
+                        <VStack spacing={3} align="stretch">
+                            <HStack justify="space-between">
+                                <HStack spacing={2}>
+                                    {exportJob.status === 'running' && <Spinner size="sm" color="blue.400" />}
+                                    <Text fontWeight="bold">
+                                        Export {exportJob.status === 'running' ? 'in progress' : 'complete'}
+                                    </Text>
+                                </HStack>
+                                <Text fontSize="sm" color="gray.500">
+                                    {exportJob.done + exportJob.skipped + exportJob.failed}/{exportJob.total} · {exportJob.done} written · {exportJob.skipped} skipped · {exportJob.failed} failed
+                                </Text>
+                            </HStack>
+                            <Progress
+                                value={exportJob.total > 0 ? Math.round(((exportJob.done + exportJob.skipped + exportJob.failed) / exportJob.total) * 100) : 0}
+                                size="sm"
+                                colorScheme="blue"
+                            />
+                        </VStack>
                     </Box>
                 )}
             </VStack>

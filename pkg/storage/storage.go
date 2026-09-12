@@ -23,6 +23,7 @@ type StorageService interface {
 	UploadFile(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error
 	GetFileStream(ctx context.Context, objectName string) (ReadSeekCloser, error)
 	GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error)
+	DeleteObject(ctx context.Context, objectName string) error
 }
 
 // MinIOStorage implements StorageService using MinIO
@@ -95,4 +96,12 @@ func (s *MinIOStorage) GetPresignedURL(ctx context.Context, objectName string, e
 		return nil, fmt.Errorf("failed to generate presigned url: %w", err)
 	}
 	return presignedURL, nil
+}
+
+// DeleteObject removes an object from the bucket.
+func (s *MinIOStorage) DeleteObject(ctx context.Context, objectName string) error {
+	if err := s.Client.RemoveObject(ctx, s.Bucket, objectName, minio.RemoveObjectOptions{}); err != nil {
+		return fmt.Errorf("failed to delete object %s: %w", objectName, err)
+	}
+	return nil
 }

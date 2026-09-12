@@ -8,6 +8,7 @@ import (
 	"go-postgres-example/pkg/subsonic"
 	"log"
 	"net/http"
+	"time"
 
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
@@ -20,6 +21,12 @@ func main() {
 	cfg := config.New()
 	if cfg.DatabaseURL == "" {
 		log.Fatal("DATABASE_URL is not set")
+	}
+
+	// Refuse to start with the insecure default JWT secret: anyone could forge
+	// valid tokens and impersonate any user.
+	if cfg.JWTSecret == "" || cfg.JWTSecret == "default-secret" {
+		log.Fatal("JWT_SECRET must be set to a strong, unique value (the default is not allowed)")
 	}
 
 	// Connect to the database
@@ -52,22 +59,33 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(conn, cfg)
+	authHandler := handlers.NewAuthHandler(conn, cfg, minioStorage)
 	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(conn, cfg, minioStorage)
 	songHandler := handlers.NewSongHandler(conn, cfg)
 	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
+	tidalHandler := handlers.NewTidalHandler(conn, cfg, minioStorage)
+	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage)
 
 	// Initialize the Subsonic handler
 	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)
 
 	// Initialize the router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, cfg.CORSAllowedOrigins)
 
-	// Start server
+	// Start server with explicit timeouts to mitigate Slowloris and
+	// connection-exhaustion attacks.
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      10 * time.Minute, // generous: large downloads/streams
+		IdleTimeout:       2 * time.Minute,
+	}
 	log.Printf("Server starting on port %s", cfg.Port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}
 }

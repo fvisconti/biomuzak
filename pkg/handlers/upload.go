@@ -17,6 +17,12 @@ import (
 	"strings"
 )
 
+// maxConcurrentProcessors bounds how many files are processed (hashed,
+// uploaded, and sent to the audio processor) at the same time across all
+// uploads. This prevents a burst of uploads from spawning unbounded
+// goroutines and exhausting memory / the audio processor.
+var processingSem = make(chan struct{}, 4)
+
 // UploadHandler holds the dependencies for the upload handlers
 type UploadHandler struct {
 	DB      *sql.DB
@@ -108,7 +114,14 @@ func saveUploadedFile(fileHeader *multipart.FileHeader, destDir string) error {
 	}
 	defer file.Close()
 
-	destPath := filepath.Join(destDir, fileHeader.Filename)
+	// Sanitize the client-supplied filename to prevent path traversal.
+	// filepath.Base strips any directory components (e.g. "../../evil").
+	safeName := filepath.Base(fileHeader.Filename)
+	if safeName == "" || safeName == "." || safeName == string(filepath.Separator) {
+		return fmt.Errorf("invalid uploaded file name: %q", fileHeader.Filename)
+	}
+
+	destPath := filepath.Join(destDir, safeName)
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return fmt.Errorf("failed to create destination file: %w", err)
@@ -123,6 +136,11 @@ func saveUploadedFile(fileHeader *multipart.FileHeader, destDir string) error {
 
 // processDirectory walks through the given directory and processes all supported audio files.
 func (h *UploadHandler) processDirectory(dir string, processor metadata.ProcessorAPI, userID int, playlistID int) {
+	// Bound the number of concurrently-processing uploads to avoid unbounded
+	// goroutine growth and memory pressure under load.
+	processingSem <- struct{}{}
+	defer func() { <-processingSem }()
+
 	log.Printf("Starting to process directory: %s", dir)
 
 	defer func() {

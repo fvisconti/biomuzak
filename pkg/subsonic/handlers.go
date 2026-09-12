@@ -58,6 +58,9 @@ func (h *Handler) GetIndexes(w http.ResponseWriter, r *http.Request) {
 
 	indexMap := make(map[string][]Artist)
 	for _, artist := range artists {
+		if artist.Name == "" {
+			continue
+		}
 		firstLetter := strings.ToUpper(string(artist.Name[0]))
 		indexMap[firstLetter] = append(indexMap[firstLetter], Artist{
 			ID:   strconv.Itoa(artist.ID),
@@ -168,7 +171,20 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	// Scope to the authenticated user (IDOR protection)
+	userID, ok := GetUserIDFromContext(r.Context())
+	if !ok {
+		respondWithXML(w, &Response{
+			Status: "failed",
+			Error: &Error{
+				Code:    40,
+				Message: "Unauthorized",
+			},
+		})
+		return
+	}
+
+	filePath, err := db.GetSongFilePathForUser(h.DB, userID, songID)
 	if err != nil {
 		respondWithXML(w, &Response{
 			Status: "failed",

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, VStack, Link, Icon, Text, Divider, useColorModeValue } from '@chakra-ui/react';
-import { FiHome, FiMusic, FiList, FiDisc, FiUploadCloud } from 'react-icons/fi';
+import { FiHome, FiMusic, FiList, FiDisc, FiUploadCloud, FiCloud } from 'react-icons/fi';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { usePlaylists } from '../../context/PlaylistContext';
@@ -99,6 +99,7 @@ const Sidebar = () => {
                 </Text>
                 <NavItem icon={FiHome} to="/">Home</NavItem>
                 <NavItem icon={FiMusic} to="/library">Library</NavItem>
+                <NavItem icon={FiCloud} to="/tidal">Tidal</NavItem>
 
                 <Divider my={4} borderColor="gray.700" />
 
