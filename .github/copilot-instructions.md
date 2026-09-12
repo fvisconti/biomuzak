@@ -34,7 +34,7 @@ feature embeddings used for "similar songs."
 - **Errors**: check and handle every error explicitly; don't leak internals to clients.
 - **Tests**: co-located `*_test.go`; table-driven where sensible; must pass before done.
 - **Migrations**: add a new numbered file in `db/migrations/`; never edit applied ones.
-- **Changelog**: after completing a task, add an entry to `CHANGELOG.md`
+- **Changelog**: after completing a task, add an entry to `docs/CHANGELOG.md`
   (Keep a Changelog format) under `[Unreleased]`.
 
 ## Resources

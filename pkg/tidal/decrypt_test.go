@@ -12,7 +12,7 @@ import (
 // encryptForTest builds an encrypted Tidal-style payload: IV || AES-CBC(PKCS7(plain)).
 func encryptForTest(plain []byte, trackID int) []byte {
 	h := sha1.New()
-	_, _ = h.Write([]byte(fmt.Sprintf("%d", trackID)))
+	_, _ = h.Write(fmt.Appendf(nil, "%d", trackID))
 	key := h.Sum(nil)[:16]
 
 	block, err := aes.NewCipher(key)

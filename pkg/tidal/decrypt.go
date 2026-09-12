@@ -22,7 +22,7 @@ func DecryptStream(encrypted []byte, trackID int) ([]byte, error) {
 
 	// Derive key from track ID.
 	h := sha1.New()
-	_, _ = h.Write([]byte(fmt.Sprintf("%d", trackID)))
+	_, _ = h.Write(fmt.Appendf(nil, "%d", trackID))
 	key := h.Sum(nil)[:16]
 
 	iv := encrypted[:16]

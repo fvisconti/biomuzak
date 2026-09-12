@@ -306,7 +306,7 @@ When adding features that span multiple components:
 1. **Update documentation**:
    - Update README.md if you changed APIs
    - Add inline code comments
-   - Update USER_GUIDE.md for user-facing changes
+   - Update docs/USER_GUIDE.md for user-facing changes
 
 2. **Run all tests**:
    ```bash
