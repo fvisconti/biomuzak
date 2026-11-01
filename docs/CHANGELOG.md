@@ -37,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP client timeout (5 min) for calls to the audio processor.
 
 ### Changed
+- Rewrote the `.github` Copilot configuration (agents, instructions, skills,
+  PR template, CI) to a modernized layout, and added a repo-root `REVIEW.md`
+  capturing the project's hard invariants. Added dedicated instruction files
+  and scoped review skills (`/audio-processor-review`, `/frontend-review`) for
+  the audio-processor (Essentia/FastAPI) and the frontend (React/Vite/Chakra),
+  plus a VectorChord docs-grounding section. Developer-process only; no
+  runtime behaviour change.
 - Subsonic password auth now verifies the password against the stored bcrypt hash.
 - Subsonic token auth fails closed (not supported with one-way bcrypt storage).
 - `GetAllArtists` and `Search` aggregate from the `songs` table (the `artists`/
