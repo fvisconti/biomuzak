@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- `docs/PLAN.md`: a living development plan for the Tidal-first feature set
+  (global catalog visibility, similar-track suggestions, genre catalogue +
+  playlist-name matching, per-genre MinIO buckets + object tagging, Tidal
+  link-paste download, sortable playlists, and Subsonic API completeness).
+  Developer-process only; no runtime behaviour change.
 - **Tidal integration** (`pkg/tidal`, `pkg/handlers/tidal.go`, `frontend/src/pages/Tidal.jsx`):
   per-user Tidal account pairing via the OAuth2 device flow, library browsing
   (tracks / albums / playlists), and batch import of selected tracks into the
