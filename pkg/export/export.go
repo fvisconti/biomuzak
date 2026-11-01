@@ -29,13 +29,17 @@ type resolved struct {
 
 // Exporter writes a copy of library songs to a local folder on the server.
 type Exporter struct {
-	DB      *sql.DB
-	Storage storage.StorageService
+	DB          *sql.DB
+	Storage     storage.StorageService
+	Concurrency int // max parallel export workers (EXPORT_CONCURRENCY, default 4)
 }
 
 // NewExporter builds an Exporter.
-func NewExporter(db *sql.DB, s storage.StorageService) *Exporter {
-	return &Exporter{DB: db, Storage: s}
+func NewExporter(db *sql.DB, s storage.StorageService, concurrency int) *Exporter {
+	if concurrency < 1 {
+		concurrency = 4
+	}
+	return &Exporter{DB: db, Storage: s, Concurrency: concurrency}
 }
 
 // ItemStatus is the per-song status within an export job.
@@ -77,6 +81,9 @@ func GetExportJob(id string) (*ExportJob, bool) {
 
 // ExportSongs writes the given songs to cfg.ExportPath using cfg.ExportTemplate.
 // It returns the job immediately; progress is tracked on the job.
+// ExportSongs exports the given songs to disk. The userID parameter is retained
+// for API stability (callers pass it) but is no longer used for scoping: the
+// catalog is shared, so any song can be exported by any authenticated user.
 func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, songIDs []int, cfg tidal.TidalConfig) (*ExportJob, error) {
 	if cfg.ExportPath == "" {
 		return nil, fmt.Errorf("export_path is not set; configure it in Tidal settings")
@@ -88,12 +95,17 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 		cfg.ExportTemplate = "{artist}/{album}/{title}"
 	}
 
-	// Resolve songs (scoped to the user) up front.
+	// Resolve songs up front in a single batched query (avoids N+1).
+	// The catalog is shared, so any song can be exported.
+	songMap, err := db.GetSongsByIDs(e.DB, songIDs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve songs: %w", err)
+	}
 	resolvedSongs := make([]resolved, 0, len(songIDs))
 	for _, sid := range songIDs {
-		song, err := db.GetSongByIDForUser(e.DB, userID, sid)
-		if err != nil {
-			return nil, fmt.Errorf("song %d not found: %w", sid, err)
+		song, ok := songMap[sid]
+		if !ok {
+			return nil, fmt.Errorf("song %d not found", sid)
 		}
 		resolvedSongs = append(resolvedSongs, resolved{
 			songID:   song.ID,
@@ -119,14 +131,35 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 	exportJobs.jobs[jobID] = job
 	exportJobs.mu.Unlock()
 
-	go func() {
-		for i, s := range resolvedSongs {
-			if ctx.Err() != nil {
-				break
-			}
-			job.setItem(i, "writing", "", "")
-			dest, err := e.exportOne(ctx, s, cfg)
-			switch {
+	// Bounded worker pool: songs are independent, so fan out to N workers.
+	// Concurrency is controlled by EXPORT_CONCURRENCY (default 4).
+	concurrency := e.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(resolvedSongs) {
+		concurrency = len(resolvedSongs)
+	}
+
+	indices := make(chan int, len(resolvedSongs))
+	for i := range resolvedSongs {
+		indices <- i
+	}
+	close(indices)
+
+	var wg sync.WaitGroup
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range indices {
+				if ctx.Err() != nil {
+					return
+				}
+				s := resolvedSongs[i]
+				job.setItem(i, "writing", "", "")
+				dest, err := e.exportOne(ctx, s, cfg)
+				switch {
 			case err == errSkipped:
 				job.setItem(i, "skipped", dest, "")
 				job.incSkipped()
@@ -137,7 +170,11 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 				job.setItem(i, "done", dest, "")
 				job.incDone()
 			}
-		}
+			}
+		}()
+	}
+	go func() {
+		wg.Wait()
 		job.finish()
 	}()
 

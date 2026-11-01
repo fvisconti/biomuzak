@@ -171,9 +171,9 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Scope to the authenticated user (IDOR protection)
-	userID, ok := GetUserIDFromContext(r.Context())
-	if !ok {
+	// Auth check. The catalog is shared, so any authenticated user can stream
+	// any track.
+	if _, ok := GetUserIDFromContext(r.Context()); !ok {
 		respondWithXML(w, &Response{
 			Status: "failed",
 			Error: &Error{
@@ -184,7 +184,7 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := db.GetSongFilePathForUser(h.DB, userID, songID)
+	filePath, err := db.GetSongFilePath(h.DB, songID)
 	if err != nil {
 		respondWithXML(w, &Response{
 			Status: "failed",

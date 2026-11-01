@@ -25,7 +25,7 @@ When performing a code review, prioritize issues in the following order:
 - **Correctness**: Logic errors, data corruption risks, race conditions
 - **Breaking Changes**: API contract changes without versioning
 - **Data Loss**: Risk of data loss or corruption
-- **biomuzak Prime Directives Violated**: per-user scoping bypass, SQL built by
+- **biomuzak Prime Directives Violated**: playlist/rating scoping bypass, SQL built by
   concatenation, secrets in defaults or logs, edited applied migration, unbounded vector
   search
 
@@ -47,9 +47,12 @@ When performing a code review, prioritize issues in the following order:
 When performing a code review for biomuzak changes, verify the following:
 
 ### Prime Directives (Non-negotiable)
-- [ ] **Per-user scoping** (Directive 1): Every library query is scoped to the
-  requesting user from the verified JWT claim; never from a body field, path segment, or
-  query parameter. Admin-only routes require the `is_admin` check in `pkg/middleware`.
+- [ ] **Shared catalog, per-user playlists** (Directive 1): The song catalog is global
+  (any user can list/stream/download any track; genre editing and song
+  deletion are admin-only). Every *playlist* and *rating*
+  query is scoped to the requesting user from the verified JWT claim; never from a body
+  field, path segment, or query parameter. Admin-only routes require the `is_admin`
+  check in `pkg/middleware`.
 - [ ] **Parameterized SQL only** (Directive 2): `$1, $2, ...` bindings; no
   `fmt.Sprintf` into query text.
 - [ ] **No magic literals** (Directive 3): Every tunable is an environment variable with
@@ -83,7 +86,8 @@ When performing a code review for biomuzak changes, verify the following:
 - [ ] **Follows `.github/instructions/sql.instructions.md`**: PostgreSQL 18 patterns,
   vchord usage
 - [ ] **Migrations**: New numbered file in `db/migrations/`, immutable once merged
-- [ ] **Per-user scoping**: Every library query carries a `user_id` predicate
+- [ ] **Playlist/rating scoping**: Every playlist and rating query carries a `user_id`
+  predicate. Catalog (songs/albums) queries are intentionally global.
 - [ ] **No Hardcoded Limits**: Vector search limit, pagination, batch sizes are from
   environment variables
 
@@ -186,8 +190,9 @@ When performing a code review, verify:
 
 When performing a code review, enforce:
 
-1. **Per-user scoping**: A library operation is scoped to the requesting user from the
-   JWT; the same operation is not reachable with another user's data.
+1. **Shared catalog, per-user playlists**: The song catalog is global. A *playlist* or
+   *rating* operation is scoped to the requesting user from the JWT; the same operation
+   is not reachable with another user's playlists or ratings.
 2. **Changelog**: Every user-visible change has a `docs/CHANGELOG.md` bullet under
    `## [Unreleased]`.
 3. **Conventional Commits**: Commit messages follow `feat(scope):`, `fix(scope):`,
@@ -205,32 +210,32 @@ When completing a review, mark each item:
 
 ## Examples of biomuzak-Specific Issues to Flag
 
-### ❌ Per-user scoping bypass (Directive 1 Violation)
+### ❌ Playlist/rating scoping bypass (Directive 1 Violation)
 ```go
-// BAD: id from the path, no user predicate
-songID := r.URL.Path
-song, err := db.GetSong(ctx, songID)
+// BAD: playlist id from the path, no user predicate — leaks another user's playlist
+playlistID := r.URL.Path
+playlist, err := db.GetPlaylist(ctx, playlistID)
 ```
 
 ```go
-// GOOD: id from the path, scoped to the JWT user
+// GOOD: playlist id from the path, scoped to the JWT user
 principal, err := auth.ExtractPrincipal(r)
 if err != nil {
     return nil, fmt.Errorf("extract principal: %w", err)
 }
-song, err := db.GetSong(ctx, principal.UserID, songID)
+playlist, err := db.GetPlaylist(ctx, principal.UserID, playlistID)
 ```
 
 ### ❌ SQL built by concatenation (Directive 2 Violation)
 ```go
 // BAD: string concatenation
-query := "SELECT * FROM songs WHERE title LIKE '%" + title + "%'"
+query := "SELECT * FROM playlists WHERE name LIKE '%" + name + "%'"
 ```
 
 ```go
 // GOOD: parameterized
-query := "SELECT * FROM songs WHERE user_id = $1 AND title LIKE $2"
-rows, err := db.Query(ctx, query, principal.UserID, "%"+title+"%")
+query := "SELECT * FROM playlists WHERE user_id = $1 AND name LIKE $2"
+rows, err := db.Query(ctx, query, principal.UserID, "%"+name+"%")
 ```
 
 ### ❌ Secret in a default (Directive 3 Violation)

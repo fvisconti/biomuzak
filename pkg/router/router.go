@@ -58,7 +58,6 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		r.Get("/api/library", libraryHandler.GetLibraryHandler)
 		r.Post("/api/songs/{songID}/rate", libraryHandler.RateSongHandler)
 		r.Delete("/api/songs/{songID}", libraryHandler.DeleteSongHandler)
-		r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
 		r.Get("/api/songs/{songID}/similar", songHandler.GetSimilarSongsHandler)
 		r.Get("/api/songs/{songID}/stream", streamHandler.StreamSongHandler)
 		r.Get("/api/songs/{songID}/download", streamHandler.DownloadSongHandler)
@@ -110,6 +109,8 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 			r.Get("/api/admin/users", authHandler.AdminListUsers)
 			r.Post("/api/admin/users", authHandler.AdminCreateUser)
 			r.Delete("/api/admin/users/{id}", authHandler.DeleteUser)
+			r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
+			r.Delete("/api/admin/songs/{songID}", songHandler.DeleteSongHandler)
 		})
 
 	})

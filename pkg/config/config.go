@@ -50,6 +50,9 @@ type Config struct {
 	// Tidal OAuth (Device Authorization flow)
 	TidalClientID     string
 	TidalClientSecret string
+
+	// Export concurrency: max parallel workers for the export job.
+	ExportConcurrency int
 }
 
 // New creates a new Config struct
@@ -84,6 +87,8 @@ func New() *Config {
 
 		TidalClientID:     getEnv("TIDAL_CLIENT_ID", ""),
 		TidalClientSecret: getEnv("TIDAL_CLIENT_SECRET", ""),
+
+		ExportConcurrency: getEnvInt("EXPORT_CONCURRENCY", 4),
 	}
 
 	// Prefer explicit DATABASE_URL if provided
@@ -121,6 +126,17 @@ func New() *Config {
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
+	}
+	return defaultValue
+}
+
+// getEnvInt reads an integer environment variable or returns a default.
+func getEnvInt(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		var n int
+		if _, err := fmt.Sscanf(value, "%d", &n); err == nil && n > 0 {
+			return n
+		}
 	}
 	return defaultValue
 }

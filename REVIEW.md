@@ -7,10 +7,13 @@ matters in this repo. The generic phrasing rules live in
 
 ## Hard invariants
 
-1. **Per-user scoping.** Every library query is scoped to the requesting user,
-   taken from the verified JWT claim. A query that can return another user's
-   songs, albums, or playlists is CRITICAL. Admin-only routes require the
-   `is_admin` check in `pkg/middleware`.
+1. **Shared catalog, per-user playlists.** The song catalog is **global**: any
+   authenticated user can list, stream, and download any track. Genre editing
+   and song deletion are admin-only. The
+   per-user boundary is **playlists and ratings** — a query that can return
+   another user's *playlists* or *ratings* is CRITICAL. Admin-only routes require
+   the `is_admin` check in `pkg/middleware`. (Deliberate change from the old
+   per-user scoping; see `docs/PLAN.md` E1.)
 2. **Parameterized SQL only.** `$1, $2, ...` bindings. `fmt.Sprintf` into query
    text is CRITICAL (SQLi).
 3. **Auth on every route.** No route reachable without the JWT auth middleware

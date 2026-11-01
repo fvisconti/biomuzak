@@ -6,7 +6,14 @@ import (
 	"go-postgres-example/pkg/models"
 )
 
-// GetSongsByUserID retrieves a user's songs from the database with optional filtering and sorting
+// GetSongsByUserID retrieves the global song catalog with optional filtering and
+// sorting. The catalog is shared: every song is visible to every user. The
+// requesting user's rating is attached via a LEFT JOIN on user_songs (NULL when
+// the user has not rated the song).
+//
+// Note: the name is historical (pre-E1 it returned only the user's songs).
+// It now returns the full catalog; the userID parameter is used solely to
+// scope the rating LEFT JOIN.
 func GetSongsByUserID(db *sql.DB, userID int, filters map[string]string, sortBy string) ([]models.LibrarySong, error) {
 	// Base query
 	query := `
@@ -16,8 +23,7 @@ func GetSongsByUserID(db *sql.DB, userID int, filters map[string]string, sortBy 
 			us.rating
 		FROM songs s
 		LEFT JOIN genres g ON s.genre_id = g.id
-		JOIN user_songs us ON s.id = us.song_id
-		WHERE us.user_id = $1
+		LEFT JOIN user_songs us ON s.id = us.song_id AND us.user_id = $1
 	`
 
 	args := []interface{}{userID}
@@ -105,61 +111,12 @@ func DeleteUserSong(db *sql.DB, userID int, songID int) error {
 	return err
 }
 
-// GetOrphanedSongsForUser returns the IDs and file paths of songs that are
-// referenced ONLY by the given user (no other user has them in their library).
-// These become orphaned when the user is deleted and can be garbage-collected.
-func GetOrphanedSongsForUser(db *sql.DB, userID int) ([]models.Song, error) {
-	query := `
-		SELECT s.id, s.file_path
-		FROM songs s
-		JOIN user_songs us ON us.song_id = s.id
-		WHERE us.user_id = $1
-		  AND NOT EXISTS (
-			SELECT 1 FROM user_songs us2
-			WHERE us2.song_id = s.id AND us2.user_id <> $1
-		  )
-	`
-	rows, err := db.Query(query, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var songs []models.Song
-	for rows.Next() {
-		var song models.Song
-		if err := rows.Scan(&song.ID, &song.FilePath); err != nil {
-			return nil, err
-		}
-		songs = append(songs, song)
-	}
-	return songs, nil
-}
-
-// DeleteSongs removes songs by ID (and cascades their embeddings).
-func DeleteSongs(db *sql.DB, songIDs []int) error {
-	if len(songIDs) == 0 {
-		return nil
-	}
-	_, err := db.Exec("DELETE FROM songs WHERE id = ANY($1)", songIDs)
-	return err
-}
-
-// UpdateSongGenre updates the genre of a song
-func UpdateSongGenre(db *sql.DB, userID int, songID int, genreName string) error {
-	// First, check if user owns this song
-	var exists bool
-	err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM user_songs WHERE user_id = $1 AND song_id = $2)`, userID, songID).Scan(&exists)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return fmt.Errorf("song not found in user's library")
-	}
-
+// UpdateSongGenre updates the genre of a song. The catalog is shared, so any
+// authenticated user may update any song's genre; there is no ownership check.
+func UpdateSongGenre(db *sql.DB, songID int, genreName string) error {
 	// Find or create genre atomically to avoid a check-then-insert race.
 	var genreID int
-	err = db.QueryRow(`INSERT INTO genres (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id`, genreName).Scan(&genreID)
+	err := db.QueryRow(`INSERT INTO genres (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id`, genreName).Scan(&genreID)
 	if err == sql.ErrNoRows {
 		// A concurrent insert won the race; fetch the existing row.
 		err = db.QueryRow(`SELECT id FROM genres WHERE name = $1`, genreName).Scan(&genreID)
@@ -267,25 +224,6 @@ func GetSongFilePath(db *sql.DB, songID int) (string, error) {
 	return filePath, nil
 }
 
-// GetSongFilePathForUser retrieves the file path for a song, but only if the
-// given user has the song in their library. This prevents one user from
-// streaming/downloading another user's private uploads (IDOR).
-func GetSongFilePathForUser(db *sql.DB, userID, songID int) (string, error) {
-	var filePath string
-	err := db.QueryRow(`
-		SELECT s.file_path
-		FROM songs s
-		JOIN user_songs us ON us.song_id = s.id
-		WHERE s.id = $1 AND us.user_id = $2`, songID, userID).Scan(&filePath)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("song with ID %d not found", songID)
-		}
-		return "", err
-	}
-	return filePath, nil
-}
-
 // GetSongByID retrieves song details by its ID
 func GetSongByID(db *sql.DB, songID int) (*models.Song, error) {
 	var song models.Song
@@ -297,20 +235,34 @@ func GetSongByID(db *sql.DB, songID int) (*models.Song, error) {
 	return &song, nil
 }
 
-// GetSongByIDForUser retrieves song details by ID, but only if the given user
-// has the song in their library (IDOR protection).
-func GetSongByIDForUser(db *sql.DB, userID, songID int) (*models.Song, error) {
-	var song models.Song
-	query := `
-		SELECT s.id, s.title, s.artist, s.album, s.file_path
-		FROM songs s
-		JOIN user_songs us ON us.song_id = s.id
-		WHERE s.id = $1 AND us.user_id = $2`
-	err := db.QueryRow(query, songID, userID).Scan(&song.ID, &song.Title, &song.Artist, &song.Album, &song.FilePath)
-	if err != nil {
-		return nil, err
+// GetSongsByIDs retrieves multiple songs in a single query (batched, avoids
+// N+1). Returns a map keyed by song ID. Songs not found are simply absent
+// from the map.
+func GetSongsByIDs(db *sql.DB, songIDs []int) (map[int]*models.Song, error) {
+	if len(songIDs) == 0 {
+		return make(map[int]*models.Song), nil
 	}
-	return &song, nil
+	query := `
+		SELECT s.id, s.title, s.artist, s.album, s.year,
+		       COALESCE(g.name, '') as genre, s.file_path
+		FROM songs s
+		LEFT JOIN genres g ON s.genre_id = g.id
+		WHERE s.id = ANY($1)`
+	rows, err := db.Query(query, songIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch song lookup: %w", err)
+	}
+	defer rows.Close()
+
+	songs := make(map[int]*models.Song, len(songIDs))
+	for rows.Next() {
+		var s models.Song
+		if err := rows.Scan(&s.ID, &s.Title, &s.Artist, &s.Album, &s.Year, &s.Genre, &s.FilePath); err != nil {
+			return nil, fmt.Errorf("scan batch song: %w", err)
+		}
+		songs[s.ID] = &s
+	}
+	return songs, rows.Err()
 }
 
 // FindGenreByTrigramSearch finds the closest matching genre using trigram similarity.
@@ -331,17 +283,16 @@ func FindGenreByTrigramSearch(db *sql.DB, genreName string) (string, error) {
 	return bestMatch, nil
 }
 
-// GetAlbums retrieves a list of unique albums from the user's library
-func GetAlbums(db *sql.DB, userID int) ([]models.VirtualAlbum, error) {
+// GetAlbums retrieves a list of unique albums from the global catalog.
+func GetAlbums(db *sql.DB) ([]models.VirtualAlbum, error) {
 	query := `
 		SELECT s.album, s.artist, COUNT(*) as song_count, MAX(s.year) as year
 		FROM songs s
-		JOIN user_songs us ON s.id = us.song_id
-		WHERE us.user_id = $1 AND s.album IS NOT NULL AND s.album != ''
+		WHERE s.album IS NOT NULL AND s.album != ''
 		GROUP BY s.album, s.artist
 		ORDER BY s.album
 	`
-	rows, err := db.Query(query, userID)
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +313,10 @@ func GetAlbums(db *sql.DB, userID int) ([]models.VirtualAlbum, error) {
 	return albums, nil
 }
 
-// GetAlbumSongs retrieves songs for a specific album and artist
+// GetAlbumSongs retrieves songs for a specific album and artist from the global
+// catalog. The requesting user's rating is attached via a LEFT JOIN (NULL when
+// the user has not rated the song). The userID parameter is used solely for the
+// rating join, not for filtering which songs are returned.
 func GetAlbumSongs(db *sql.DB, userID int, albumName string, artistName string) ([]models.LibrarySong, error) {
 	query := `
 		SELECT
@@ -371,8 +325,8 @@ func GetAlbumSongs(db *sql.DB, userID int, albumName string, artistName string) 
 			us.rating
 		FROM songs s
 		LEFT JOIN genres g ON s.genre_id = g.id
-		JOIN user_songs us ON s.id = us.song_id
-		WHERE us.user_id = $1 AND s.album = $2 AND ($3 = '' OR s.artist = $3)
+		LEFT JOIN user_songs us ON s.id = us.song_id AND us.user_id = $1
+		WHERE s.album = $2 AND ($3 = '' OR s.artist = $3)
 		ORDER BY s.title
 	`
 

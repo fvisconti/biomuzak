@@ -42,6 +42,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTTP client timeout (5 min) for calls to the audio processor.
 
 ### Changed
+- **Shared catalog** (E1): the song catalog is now global — any authenticated user
+  can list, stream, and download any track. Library listing, streaming, and
+  download are no longer gated on per-user `user_songs` membership; a user's
+  rating is still shown via a `LEFT JOIN`. Playlists and ratings remain per-user.
+  Deleting a user no longer garbage-collects shared songs (only their ratings
+  and playlists are removed).
+- **Security hardening** (E1 follow-up): genre editing (`PUT /api/songs/{id}/genre`)
+  is now admin-only to prevent a compromised account from corrupting shared
+  metadata. Added `DELETE /api/admin/songs/{songID}` for admins to purge a song
+  from the catalog (DB row + MinIO object), addressing monotonic storage growth.
+- **Export performance** (E1 follow-up): song resolution in the export path is
+  now a single batched `WHERE id = ANY($1)` query instead of one query per song
+  (N+1 eliminated). The export worker uses a bounded worker pool
+  (`EXPORT_CONCURRENCY`, default 4) so independent MinIO reads + disk writes run
+  in parallel. `DELETE /api/admin/songs/{id}` now deletes the DB row and the
+  storage object concurrently.
 - Rewrote the `.github` Copilot configuration (agents, instructions, skills,
   PR template, CI) to a modernized layout, and added a repo-root `REVIEW.md`
   capturing the project's hard invariants. Added dedicated instruction files

@@ -3,7 +3,7 @@ description: "Use when: reviewing a pull request, diff, branch, or set of change
 name: "Code Reviewer"
 tools: [read, search, execute]
 model: ["qwen38 27B"]
-reasoning-effort: high
+reasoning-effort: medium
 user-invocable: true
 argument-hint: "What to review: a PR number, branch, commit range, or file paths"
 ---
@@ -34,9 +34,12 @@ this repo.
 
 On top of the generic rules, this repository has hard invariants that a review
 must verify when the diff touches the relevant area:
-- Per-user scoping: every library query is scoped to the requesting user from
-  the verified JWT claim; a query that can return another user's data is a
-  defect. Admin routes require the `is_admin` check.
+- Shared catalog, per-user playlists: the song catalog is global (any user can
+  list/stream/download any track; genre editing and song deletion are
+  admin-only). Every *playlist* and *rating* query
+  is scoped to the requesting user from the verified JWT claim; a query that
+  can return another user's playlists or ratings is a defect. Admin routes
+  require the `is_admin` check.
 - Parameterized SQL only: `$1, $2, ...` bindings; `fmt.Sprintf` into query text
   is a defect.
 - Migrations are immutable: a schema change is a new numbered file in

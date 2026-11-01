@@ -50,6 +50,7 @@ JWT_SECRET=generate-with-openssl-rand-base64-32
 PORT=8080
 UPLOAD_DIR=/root/uploads
 AUDIO_PROCESSOR_URL=http://audio-processor:8000
+EXPORT_CONCURRENCY=4
 
 # Database URL (uses above variables)
 DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable

@@ -54,7 +54,7 @@ can be revisited.
 
 | Epic | Bullet | One-line goal | Depends on | Status |
 |---|---|---|---|---|
-| **E1** Global catalog visibility | 4 | ANY user sees ANY track; playlists + ratings stay per-user | — | ⬜ |
+| **E1** Global catalog visibility | 4 | ANY user sees ANY track; playlists + ratings stay per-user | — | ✅ |
 | **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ⬜ |
 | **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ⬜ |
 | **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
@@ -91,7 +91,12 @@ download, and genre-edit are gated on `user_songs` membership.
 **Verification**: as user A, list/stream a song uploaded by user B; rating still
 per-user; deleting user B leaves songs intact. `go test -race ./...` green.
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-01) — unscoped `GetSongsByUserID`/`GetAlbums`/`GetAlbumSongs`
+(LEFT JOIN for rating), `UpdateSongGenre` (no ownership check), stream/download +
+Subsonic stream (unscoped), export (unscoped), removed song GC from `DeleteUser`,
+dropped dead `GetSongFilePathForUser`/`GetSongByIDForUser`/`GetOrphanedSongsForUser`/
+`DeleteSongs`. Docs updated (REVIEW.md, copilot-instructions.md, code-review
+instructions). New tests: `pkg/db/library_test.go`, `pkg/handlers/stream_test.go`.
 
 ---
 

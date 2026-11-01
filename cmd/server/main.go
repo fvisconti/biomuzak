@@ -63,10 +63,10 @@ func main() {
 	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
 	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
 	playlistHandler := handlers.NewPlaylistHandler(conn, cfg, minioStorage)
-	songHandler := handlers.NewSongHandler(conn, cfg)
+	songHandler := handlers.NewSongHandler(conn, cfg, minioStorage)
 	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
 	tidalHandler := handlers.NewTidalHandler(conn, cfg, minioStorage)
-	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage)
+	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage, cfg.ExportConcurrency)
 
 	// Initialize the Subsonic handler
 	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)

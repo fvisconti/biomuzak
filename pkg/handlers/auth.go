@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
-	"go-postgres-example/pkg/db"
 	"go-postgres-example/pkg/middleware"
 	"go-postgres-example/pkg/storage"
-	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -249,13 +247,9 @@ func (h *AuthHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find songs that only this user references BEFORE deleting the user, so
-	// we can garbage-collect them (DB rows + storage objects) afterward.
-	orphaned, err := db.GetOrphanedSongsForUser(h.DB, userID)
-	if err != nil {
-		log.Printf("Warning: failed to find orphaned songs for user %d: %v", userID, err)
-	}
-
+	// The song catalog is shared: deleting a user removes only their
+	// user_songs ratings and playlists (via ON DELETE CASCADE). Shared songs
+	// and their storage objects are intentionally left in place.
 	res, err := h.DB.Exec("DELETE FROM users WHERE id = $1", userID)
 	if err != nil {
 		SendError(w, "Failed to delete user", http.StatusInternalServerError)
@@ -265,24 +259,6 @@ func (h *AuthHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
 	if rows == 0 {
 		SendError(w, "User not found", http.StatusNotFound)
 		return
-	}
-
-	// Garbage-collect songs that no other user references.
-	if len(orphaned) > 0 {
-		ids := make([]int, len(orphaned))
-		for i, s := range orphaned {
-			ids[i] = s.ID
-		}
-		if err := db.DeleteSongs(h.DB, ids); err != nil {
-			log.Printf("Warning: failed to delete orphaned songs for user %d: %v", userID, err)
-		}
-		if h.Storage != nil {
-			for _, s := range orphaned {
-				if err := h.Storage.DeleteObject(r.Context(), s.FilePath); err != nil {
-					log.Printf("Warning: failed to delete storage object %s: %v", s.FilePath, err)
-				}
-			}
-		}
 	}
 
 	w.WriteHeader(http.StatusNoContent)

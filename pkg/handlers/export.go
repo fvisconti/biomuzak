@@ -23,12 +23,12 @@ type ExportHandler struct {
 }
 
 // NewExportHandler builds an ExportHandler.
-func NewExportHandler(db *sql.DB, cfg *config.Config, s storage.StorageService) *ExportHandler {
+func NewExportHandler(db *sql.DB, cfg *config.Config, s storage.StorageService, concurrency int) *ExportHandler {
 	return &ExportHandler{
 		DB:       db,
 		Cfg:      cfg,
 		Storage:  s,
-		Exporter: export.NewExporter(db, s),
+		Exporter: export.NewExporter(db, s, concurrency),
 	}
 }
 

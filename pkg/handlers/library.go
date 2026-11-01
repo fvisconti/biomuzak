@@ -122,10 +122,10 @@ type UpdateGenreRequest struct {
 	Genre string `json:"genre"`
 }
 
-// UpdateSongGenreHandler updates the genre of a song
+// UpdateSongGenreHandler updates the genre of a song. The catalog is shared, so
+// any authenticated user may update any song's genre.
 func (h *LibraryHandler) UpdateSongGenreHandler(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
-	if !ok {
+	if _, ok := middleware.GetUserIDFromContext(r.Context()); !ok {
 		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
 		return
 	}
@@ -143,7 +143,7 @@ func (h *LibraryHandler) UpdateSongGenreHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if err := db.UpdateSongGenre(h.DB, userID, songID, req.Genre); err != nil {
+	if err := db.UpdateSongGenre(h.DB, songID, req.Genre); err != nil {
 		http.Error(w, "Failed to update genre", http.StatusInternalServerError)
 		return
 	}
