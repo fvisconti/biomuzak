@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "command": "./.github/hooks/scripts/review-gate.sh",
+        "timeoutSec": 600
+      }
+    ]
+  }
+}
