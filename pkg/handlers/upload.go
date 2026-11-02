@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -58,10 +59,26 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse optional playlist ID or name
+	// Parse optional playlist ID or name. An explicit playlist_id comes from
+	// the request body, so it must be ownership-checked against the JWT user
+	// before any song is added to it (prime directive 1 — no IDOR).
 	var playlistID int
 	if playlistIDStr := r.MultipartForm.Value["playlist_id"]; len(playlistIDStr) > 0 && playlistIDStr[0] != "" {
-		fmt.Sscanf(playlistIDStr[0], "%d", &playlistID)
+		parsed, err := strconv.Atoi(playlistIDStr[0])
+		if err != nil {
+			http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+			return
+		}
+		if _, err := db.GetPlaylistByID(h.DB, userID, parsed); err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "Playlist not found", http.StatusNotFound)
+			} else {
+				log.Printf("upload: playlist ownership check failed: %v", err)
+				http.Error(w, "Failed to verify playlist", http.StatusInternalServerError)
+			}
+			return
+		}
+		playlistID = parsed
 	}
 
 	if playlistID == 0 {
@@ -94,8 +111,15 @@ func (h *UploadHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create a new metadata processor
-	processor := metadata.NewProcessor(h.DB, h.Cfg, h.Storage)
+	// Create a new metadata processor. NewProcessor can fail; it must never
+	// reach log.Fatalf from this request path (explicit-errors directive).
+	processor, err := metadata.NewProcessor(h.DB, h.Cfg, h.Storage)
+	if err != nil {
+		log.Printf("upload: failed to create metadata processor: %v", err)
+		os.RemoveAll(tempDir)
+		http.Error(w, "Failed to process upload", http.StatusInternalServerError)
+		return
+	}
 
 	// Run the processing in a background goroutine
 	go h.processDirectory(tempDir, processor, userID, playlistID)

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useRef, useEffect } from 'react';
+import { getSimilarSongs } from '../api/songs';
 
 const PlayerContext = createContext();
 
@@ -12,6 +13,7 @@ export const PlayerProvider = ({ children }) => {
     const [progress, setProgress] = useState(0);
     const [duration, setDuration] = useState(0);
     const [loading, setLoading] = useState(false);
+    const [similarSongs, setSimilarSongs] = useState([]);
 
     const audioRef = useRef(new Audio());
     const currentBlobUrl = useRef(null);
@@ -37,6 +39,29 @@ export const PlayerProvider = ({ children }) => {
             }
         };
     }, [queue, currentIndex]);
+
+    // Fetch similar tracks whenever the current song changes. A song with no
+    // embedding (or no similar matches) yields an empty list — a graceful
+    // empty state, never an error.
+    useEffect(() => {
+        if (!currentSong) {
+            setSimilarSongs([]);
+            return;
+        }
+        let cancelled = false;
+        getSimilarSongs(currentSong.id)
+            .then((res) => {
+                if (cancelled) return;
+                const list = Array.isArray(res.data) ? res.data : [];
+                setSimilarSongs(list);
+            })
+            .catch(() => {
+                if (!cancelled) setSimilarSongs([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+    }, [currentSong]);
 
     const playSong = (song) => {
         setQueue([song]);
@@ -142,6 +167,7 @@ export const PlayerProvider = ({ children }) => {
         progress,
         duration,
         loading,
+        similarSongs,
         togglePlay,
         playNext,
         playPrev,

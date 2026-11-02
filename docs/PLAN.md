@@ -55,7 +55,7 @@ can be revisited.
 | Epic | Bullet | One-line goal | Depends on | Status |
 |---|---|---|---|---|
 | **E1** Global catalog visibility | 4 | ANY user sees ANY track; playlists + ratings stay per-user | — | ✅ |
-| **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ⬜ |
+| **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ✅ |
 | **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ⬜ |
 | **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
 | **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ⬜ |
@@ -123,7 +123,12 @@ unscoped, count hardcoded). Embedding flow works (upload → audio-processor →
 **Verification**: play a song → 3 similar appear; click one → plays; a song with no
 embedding shows a graceful empty state, not an error.
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-01) — `SIMILAR_SONGS_LIMIT` env var (default 3) wired into
+`GetSimilarSongsHandler`; frontend `getSimilarSongs` API + `PlayerContext` hook +
+"Similar" panel in `PlayerBar` (click-to-play, graceful empty state); cold-start
+backfill via admin job (`POST /api/admin/embeddings/backfill` + status) that
+generates embeddings for all songs lacking them. Subsonic `getSimilarSongs.view`
+deferred to E7.
 
 ---
 

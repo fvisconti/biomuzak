@@ -41,11 +41,13 @@ type Processor struct {
 	httpClient *http.Client
 }
 
-// NewProcessor creates a new Processor.
-func NewProcessor(db *sql.DB, cfg *config.Config, storage storage.StorageService) *Processor {
+// NewProcessor creates a new Processor. It returns an error instead of
+// calling log.Fatalf so request-path handlers (upload, backfill) can fail
+// gracefully with a sanitized message (prime directive: explicit errors).
+func NewProcessor(db *sql.DB, cfg *config.Config, storage storage.StorageService) (*Processor, error) {
 	mbClient, err := musicbrainz.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create MusicBrainz client: %v", err)
+		return nil, fmt.Errorf("failed to create MusicBrainz client: %w", err)
 	}
 	return &Processor{
 		DB:       db,
@@ -55,7 +57,7 @@ func NewProcessor(db *sql.DB, cfg *config.Config, storage storage.StorageService
 		// A bounded timeout prevents a slow/hung audio processor from leaking
 		// goroutines and holding temp files on disk indefinitely.
 		httpClient: &http.Client{Timeout: 5 * time.Minute},
-	}
+	}, nil
 }
 
 // ProcessFile orchestrates the entire process for a single file.
@@ -154,7 +156,7 @@ func (p *Processor) ProcessFile(filePath string, userID int, playlistID int) err
 		song.ID = songID
 
 		// 9. Get and save song embedding (using the original temp file path)
-		embedding, err := p.getEmbeddingsFromService(filePath)
+		embedding, err := p.getEmbeddingsFromService(context.Background(), filePath)
 		if err != nil {
 			// Log the error but don't fail the whole process, as embedding is an enhancement.
 			log.Printf("Failed to get embedding for song ID %d: %v", songID, err)
@@ -190,8 +192,9 @@ func (p *Processor) ProcessFile(filePath string, userID int, playlistID int) err
 	return nil
 }
 
-// getEmbeddingsFromService calls the audio processor microservice to generate embeddings.
-func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error) {
+// getEmbeddingsFromService calls the audio processor microservice to generate
+// embeddings. ctx aborts an in-flight call (e.g. a cancelled backfill job).
+func (p *Processor) getEmbeddingsFromService(ctx context.Context, filePath string) ([]float64, error) {
 	// Open the audio file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -221,7 +224,7 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 
 	// Create the HTTP request
 	url := p.Cfg.AudioProcessorURL + "/process-audio/"
-	req, err := http.NewRequest("POST", url, body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -256,6 +259,49 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 
 	log.Printf("Successfully received embedding of dimension %d from audio processor", len(result.Embedding))
 	return result.Embedding, nil
+}
+
+// GenerateEmbeddingForSong generates and persists an embedding for an existing
+// song by ID. It downloads the stored audio file from object storage to a temp
+// file, sends it to the audio processor, and saves the resulting embedding.
+// Used by the cold-start backfill for songs that lack an embedding.
+func (p *Processor) GenerateEmbeddingForSong(ctx context.Context, songID int) error {
+	filePath, err := db.GetSongFilePath(ctx, p.DB, songID)
+	if err != nil {
+		return fmt.Errorf("failed to get file path for song %d: %w", songID, err)
+	}
+
+	stream, err := p.Storage.GetFileStream(ctx, filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read song %d from storage: %w", songID, err)
+	}
+	defer stream.Close()
+
+	// Write to a temp file so the audio processor can read it by path.
+	tmp, err := os.CreateTemp("", "biomuzak-backfill-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmp, stream); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to write temp file for song %d: %w", songID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	embedding, err := p.getEmbeddingsFromService(ctx, tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to generate embedding for song %d: %w", songID, err)
+	}
+
+	if err := db.SaveSongEmbedding(p.DB, songID, embedding); err != nil {
+		return fmt.Errorf("failed to save embedding for song %d: %w", songID, err)
+	}
+	return nil
 }
 
 // moveToUploadDir uploads a file from temporary location to MinIO.

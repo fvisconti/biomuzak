@@ -358,17 +358,17 @@ Content-Type: application/json
 GET /api/songs/{songID}/similar
 Authorization: Bearer <token>
 
-Response:
-{
-  "similar_songs": [
-    {
-      "id": 2,
-      "title": "Similar Song",
-      "artist": "Artist",
-      "similarity": 0.95
-    }
-  ]
-}
+Response (a JSON array of songs closest to the query song, each with a
+similarity score; the query song itself is excluded, and the count is capped
+by SIMILAR_SONGS_LIMIT):
+[
+  {
+    "id": 2,
+    "title": "Similar Song",
+    "artist": "Artist",
+    "similarity": 0.95
+  }
+]
 ```
 
 ### Playlist Endpoints
@@ -493,6 +493,9 @@ Configuration is managed through environment variables. See `.env.example` for a
 
 - `DATABASE_URL`: PostgreSQL connection string
 - `JWT_SECRET`: Secret key for JWT token signing (use a strong random string in production)
+- `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`: MinIO credentials. No defaults — the
+  server refuses to start without them (docker compose maps them from
+  `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`)
 - `PORT`: Port for the backend server (default: 8080)
 
 ### Optional Variables
@@ -500,6 +503,8 @@ Configuration is managed through environment variables. See `.env.example` for a
 - `UPLOAD_DIR`: Directory for uploaded audio files (default: ./uploads)
 - `AUDIO_PROCESSOR_URL`: URL of the audio processor service (default: http://localhost:8000)
 - `ALLOW_REGISTRATION`: Enables public registration endpoint when `true` (default: `false`)
+- `SIMILAR_SONGS_LIMIT`: How many similar tracks the "similar songs" panel returns for the playing song (default: 3)
+- `EXPORT_CONCURRENCY`: Max parallel workers when exporting songs to disk (default: 4)
 - `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`: Used once to bootstrap the first admin user if the users table is empty
 - `POSTGRES_USER`: PostgreSQL username (for Docker)
 - `POSTGRES_PASSWORD`: PostgreSQL password (for Docker)

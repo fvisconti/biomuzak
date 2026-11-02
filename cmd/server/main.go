@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"go-postgres-example/pkg/handlers"
@@ -8,6 +9,8 @@ import (
 	"go-postgres-example/pkg/subsonic"
 	"log"
 	"net/http"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"go-postgres-example/pkg/auth"
@@ -27,6 +30,13 @@ func main() {
 	// valid tokens and impersonate any user.
 	if cfg.JWTSecret == "" || cfg.JWTSecret == "default-secret" {
 		log.Fatal("JWT_SECRET must be set to a strong, unique value (the default is not allowed)")
+	}
+
+	// Object-storage credentials are secrets: there is no meaningful default
+	// (directive 3). Missing MINIO_ACCESS_KEY / MINIO_SECRET_KEY fail fast at
+	// boot instead of silently trying well-known credentials.
+	if cfg.MinIOAccessKey == "" || cfg.MinIOSecretKey == "" {
+		log.Fatal("MINIO_ACCESS_KEY and MINIO_SECRET_KEY are required")
 	}
 
 	// Connect to the database
@@ -67,12 +77,13 @@ func main() {
 	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
 	tidalHandler := handlers.NewTidalHandler(conn, cfg, minioStorage)
 	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage, cfg.ExportConcurrency)
+	backfillHandler := handlers.NewBackfillHandler(conn, cfg, minioStorage)
 
 	// Initialize the Subsonic handler
 	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)
 
 	// Initialize the router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, cfg.CORSAllowedOrigins)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, backfillHandler, cfg.CORSAllowedOrigins)
 
 	// Start server with explicit timeouts to mitigate Slowloris and
 	// connection-exhaustion attacks.
@@ -85,8 +96,29 @@ func main() {
 		IdleTimeout:       2 * time.Minute,
 	}
 	log.Printf("Server starting on port %s", cfg.Port)
-	if err := srv.ListenAndServe(); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+
+	// Graceful shutdown: on SIGINT/SIGTERM stop accepting connections, cancel
+	// any running backfill job (its detached goroutine needs a clear exit
+	// path), and let in-flight requests drain within a bounded timeout.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("Shutdown signal received; stopping server and cancelling backfill")
+		handlers.CancelBackfill()
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelShutdown()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
+		<-errCh // ListenAndServe returns http.ErrServerClosed
 	}
 }
 

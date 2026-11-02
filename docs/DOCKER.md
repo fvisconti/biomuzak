@@ -51,6 +51,12 @@ PORT=8080
 UPLOAD_DIR=/root/uploads
 AUDIO_PROCESSOR_URL=http://audio-processor:8000
 EXPORT_CONCURRENCY=4
+SIMILAR_SONGS_LIMIT=3
+
+# MinIO (required — the backend refuses to start without these; docker
+# compose maps them from MINIO_ROOT_USER / MINIO_ROOT_PASSWORD)
+MINIO_ACCESS_KEY=your-minio-access-key
+MINIO_SECRET_KEY=your-minio-secret-key
 
 # Database URL (uses above variables)
 DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable

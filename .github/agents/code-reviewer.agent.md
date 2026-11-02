@@ -26,7 +26,7 @@ change set — you never modify code.
 Read `REVIEW.md` (repo root) first — it is the short, repo-specific statement
 of what failure looks like here, the hard invariants, the nit cap and the
 paths to skip. Then follow
-`.github/instructions/code-review-generic.instructions.md` exactly —
+`.github/instructions/code-review-biomuzak.instructions.md` exactly —
 priorities (CRITICAL / IMPORTANT / SUGGESTION), the comment format template,
 and the review checklist. That file is the single source of truth for how to
 phrase findings; `REVIEW.md` is the single source of truth for what matters in

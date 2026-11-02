@@ -16,9 +16,9 @@ import (
 
 // ExportHandler handles exporting library songs to a local folder.
 type ExportHandler struct {
-	DB      *sql.DB
-	Cfg     *config.Config
-	Storage storage.StorageService
+	DB       *sql.DB
+	Cfg      *config.Config
+	Storage  storage.StorageService
 	Exporter *export.Exporter
 }
 
@@ -77,12 +77,21 @@ func (h *ExportHandler) StartHandler(w http.ResponseWriter, r *http.Request) {
 
 // ExportStatusHandler returns the status of an export job.
 func (h *ExportHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	userID, _ := middleware.GetUserIDFromContext(r.Context())
-	_ = userID
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	jobID := r.URL.Query().Get("jobId")
 	job, exists := export.GetExportJob(jobID)
 	if !exists {
 		http.Error(w, "Job not found", http.StatusNotFound)
+		return
+	}
+	// Job state is per-user: only the user who started the export may read it
+	// (prime directive 1), mirroring the Tidal import-status route.
+	if job.UserID != userID {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 	writeJSON(w, http.StatusOK, job.Snapshot())

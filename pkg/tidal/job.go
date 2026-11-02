@@ -26,28 +26,59 @@ type ImportJob struct {
 	Status string       `json:"status"` // running | done
 	Items  []ItemStatus `json:"items"`
 
+	// finishedAt is set (under mu) when the job stops running; the store
+	// sweeps entries older than importRetentionTTL.
+	finishedAt time.Time
+
 	mu sync.Mutex
+}
+
+// importRetentionTTL is how long a finished import job stays queryable before
+// the store evicts it. Jobs are in-memory status snapshots; without eviction
+// the map grows forever (one leaked entry per import).
+const importRetentionTTL = 1 * time.Hour
+
+// expired reports whether the job finished long enough ago to be evicted.
+func (j *ImportJob) expired(now time.Time) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.Status != "running" && !j.finishedAt.IsZero() &&
+		now.Sub(j.finishedAt) > importRetentionTTL
 }
 
 // jobStore holds in-flight import jobs (single-instance, in-memory).
 type jobStore struct {
-	mu    sync.Mutex
-	jobs  map[string]*ImportJob
+	mu   sync.Mutex
+	jobs map[string]*ImportJob
 }
 
 var importJobs = &jobStore{jobs: make(map[string]*ImportJob)}
 
+// sweepLocked evicts finished jobs older than the retention TTL. Callers
+// must hold s.mu. Sweeping on add/get bounds the store size without a
+// background ticker (and its shutdown path).
+func (s *jobStore) sweepLocked(now time.Time) {
+	for id, j := range s.jobs {
+		if j.expired(now) {
+			delete(s.jobs, id)
+		}
+	}
+}
+
 func (s *jobStore) add(job *ImportJob) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.sweepLocked(time.Now())
 	s.jobs[job.ID] = job
 }
 
 func (s *jobStore) get(id string) (*ImportJob, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := time.Now()
+	s.sweepLocked(now)
 	j, ok := s.jobs[id]
-	return j, ok
+	return j, ok && !j.expired(now)
 }
 
 // GetImportJob returns a job by ID.
@@ -162,8 +193,9 @@ func (j *ImportJob) incFailed() {
 
 func (j *ImportJob) finish() {
 	j.mu.Lock()
-	defer j.mu.Unlock()
 	j.Status = "done"
+	j.finishedAt = time.Now()
+	j.mu.Unlock()
 }
 
 // Snapshot returns a copy of the job for safe serialization.

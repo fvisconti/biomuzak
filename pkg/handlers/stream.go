@@ -44,7 +44,7 @@ func (h *StreamHandler) StreamSongHandler(w http.ResponseWriter, r *http.Request
 
 	// 2. Get file path from DB. The catalog is shared, so any authenticated user
 	// can stream any track.
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	filePath, err := db.GetSongFilePath(r.Context(), h.DB, songID)
 	if err != nil {
 		http.Error(w, "Song not found", http.StatusNotFound)
 		return

@@ -1,8 +1,10 @@
 package metadata
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/storage"
 	"io"
@@ -11,13 +13,21 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
+
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 )
 
 type MockStorage struct {
 	UploadFileCalls int
 	LastObjectKey   string
+	// StreamData is returned by GetFileStream, so code paths that read a
+	// stored object (e.g. GenerateEmbeddingForSong) get real bytes.
+	StreamData []byte
 }
 
 func (m *MockStorage) UploadFile(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error {
@@ -27,8 +37,16 @@ func (m *MockStorage) UploadFile(ctx context.Context, objectName string, reader 
 }
 
 func (m *MockStorage) GetFileStream(ctx context.Context, objectName string) (storage.ReadSeekCloser, error) {
-	return nil, nil
+	return &bytesReadSeekCloser{r: bytes.NewReader(m.StreamData)}, nil
 }
+
+type bytesReadSeekCloser struct{ r *bytes.Reader }
+
+func (b *bytesReadSeekCloser) Read(p []byte) (int, error) { return b.r.Read(p) }
+func (b *bytesReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
+	return b.r.Seek(offset, whence)
+}
+func (b *bytesReadSeekCloser) Close() error { return nil }
 
 func (m *MockStorage) GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error) {
 	return nil, nil
@@ -142,7 +160,7 @@ func TestGetEmbeddingsFromService(t *testing.T) {
 	p := &Processor{Cfg: cfg}
 
 	// Test getting embeddings
-	embedding, err := p.getEmbeddingsFromService(testFile)
+	embedding, err := p.getEmbeddingsFromService(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("getEmbeddingsFromService() returned error: %v", err)
 	}
@@ -199,13 +217,105 @@ func TestGetEmbeddingsFromService_ErrorHandling(t *testing.T) {
 			}
 			p := &Processor{Cfg: cfg}
 
-			_, err := p.getEmbeddingsFromService(testFile)
+			_, err := p.getEmbeddingsFromService(context.Background(), testFile)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
 			if !tt.expectError && err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
+		})
+	}
+}
+
+// embedding38String builds the pgvector text form of a 38-dim vector filled
+// with val — the exact string db.SaveSongEmbedding sends as $2.
+func embedding38String(val float64) string {
+	s := strconv.FormatFloat(val, 'f', -1, 64)
+	return "[" + strings.TrimSuffix(strings.Repeat(s+",", 38), ",") + "]"
+}
+
+// TestGenerateEmbeddingForSong covers the cold-start backfill's per-song
+// pipeline: fetch file path, stream audio from storage, call the audio
+// processor, and persist the embedding.
+//
+// Objective: GenerateEmbeddingForSong succeeds and saves a 38-dim embedding,
+// and surfaces errors without writing to the DB on any failure.
+//
+// Given-When-Then: Given a mocked DB/storage/audio-processor, When the song
+// pipeline runs, Then the INSERT executes only on a valid 38-dim response,
+// and errors (processor down, wrong width) fail before the save.
+//
+// Edge cases: a non-38-dim processor response is rejected by the db
+// dimension guard (no SQL); a nil DB/stream is never reached because
+// GetSongFilePath errors first.
+func TestGenerateEmbeddingForSong(t *testing.T) {
+	embeddingJSON := `[` + strings.TrimSuffix(strings.Repeat("0.5,", 38), ",") + `]`
+	tests := []struct {
+		name         string
+		serverFunc   http.HandlerFunc
+		expectSave   bool
+		expectErrSub string
+	}{
+		{
+			name: "happy path saves 38-dim embedding",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"embedding": `+embeddingJSON+`}`)
+			},
+			expectSave: true,
+		},
+		{
+			name: "processor failure returns error, no save",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "essentia exploded", http.StatusInternalServerError)
+			},
+			expectErrSub: "failed to generate embedding",
+		},
+		{
+			name: "wrong-width embedding rejected before SQL",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"embedding": [1,2,3]}`)
+			},
+			expectErrSub: "dimension",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.serverFunc)
+			defer server.Close()
+
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT file_path FROM songs WHERE id = \$1`).
+				WithArgs(42).
+				WillReturnRows(sqlmock.NewRows([]string{"file_path"}).AddRow("songs/42.mp3"))
+			if tt.expectSave {
+				mock.ExpectExec(`INSERT INTO song_embeddings`).
+					WithArgs(42, embedding38String(0.5)).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			}
+
+			store := &MockStorage{StreamData: []byte("fake audio bytes")}
+			cfg := &config.Config{AudioProcessorURL: server.URL}
+			p := &Processor{DB: db, Cfg: cfg, Storage: store,
+				httpClient: &http.Client{Timeout: 5 * time.Second}}
+
+			err = p.GenerateEmbeddingForSong(context.Background(), 42)
+			if tt.expectErrSub != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectErrSub) {
+					t.Fatalf("GenerateEmbeddingForSong() error = %v, want substring %q", err, tt.expectErrSub)
+				}
+			} else if err != nil {
+				t.Fatalf("GenerateEmbeddingForSong() unexpected error: %v", err)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }

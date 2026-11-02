@@ -41,7 +41,7 @@ func TestGetLibraryHandler(t *testing.T) {
 	songHandler := handlers.NewSongHandler(db, cfg, nil)
 	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
 	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, "")
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, nil, "")
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")
@@ -79,7 +79,7 @@ func TestRateSongHandler(t *testing.T) {
 	songHandler := handlers.NewSongHandler(db, cfg, nil)
 	subsonicHandler := subsonic.NewHandler(db, cfg, nil)
 	streamHandler := handlers.NewStreamHandler(db, cfg, nil)
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, "")
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, nil, nil, nil, "")
 
 	// Create a new request
 	token, _ := auth.GenerateJWT(1, "default-secret")

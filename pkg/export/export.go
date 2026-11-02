@@ -51,9 +51,16 @@ type ItemStatus struct {
 	Error  string `json:"error,omitempty"`
 }
 
+// exportRetentionTTL is how long a finished export job stays queryable before
+// the store evicts it. Jobs are in-memory status snapshots; without eviction
+// the map grows forever (one leaked entry per export).
+const exportRetentionTTL = 1 * time.Hour
+
 // ExportJob tracks a batch export.
 type ExportJob struct {
-	ID      string       `json:"id"`
+	ID string `json:"id"`
+	// UserID owns the job for status authorization (never serialized).
+	UserID  int          `json:"-"`
 	Total   int          `json:"total"`
 	Done    int          `json:"done"`
 	Skipped int          `json:"skipped"`
@@ -61,7 +68,19 @@ type ExportJob struct {
 	Status  string       `json:"status"` // running | done
 	Items   []ItemStatus `json:"items"`
 
+	// finishedAt is set (under mu) when the job stops running; the store
+	// sweeps entries older than exportRetentionTTL.
+	finishedAt time.Time
+
 	mu sync.Mutex
+}
+
+// expired reports whether the job finished long enough ago to be evicted.
+func (j *ExportJob) expired(now time.Time) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return j.Status != "running" && !j.finishedAt.IsZero() &&
+		now.Sub(j.finishedAt) > exportRetentionTTL
 }
 
 type exportJobStore struct {
@@ -71,12 +90,33 @@ type exportJobStore struct {
 
 var exportJobs = &exportJobStore{jobs: make(map[string]*ExportJob)}
 
-// GetExportJob returns a job by ID.
+// sweepLocked evicts finished jobs older than the retention TTL. Callers
+// must hold s.mu. Sweeping on add/get bounds the store size without a
+// background ticker (and its shutdown path).
+func (s *exportJobStore) sweepLocked(now time.Time) {
+	for id, j := range s.jobs {
+		if j.expired(now) {
+			delete(s.jobs, id)
+		}
+	}
+}
+
+// add stores a job after sweeping expired entries.
+func (s *exportJobStore) add(job *ExportJob) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sweepLocked(time.Now())
+	s.jobs[job.ID] = job
+}
+
+// GetExportJob returns a job by ID; a job past its retention TTL is gone.
 func GetExportJob(id string) (*ExportJob, bool) {
 	exportJobs.mu.Lock()
 	defer exportJobs.mu.Unlock()
+	now := time.Now()
+	exportJobs.sweepLocked(now)
 	j, ok := exportJobs.jobs[id]
-	return j, ok
+	return j, ok && !j.expired(now)
 }
 
 // ExportSongs writes the given songs to cfg.ExportPath using cfg.ExportTemplate.
@@ -120,6 +160,7 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 
 	job := &ExportJob{
 		ID:     jobID,
+		UserID: userID,
 		Total:  len(resolvedSongs),
 		Status: "running",
 		Items:  make([]ItemStatus, len(resolvedSongs)),
@@ -127,9 +168,7 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 	for i, s := range resolvedSongs {
 		job.Items[i] = ItemStatus{SongID: s.songID, Title: s.title, Status: "pending"}
 	}
-	exportJobs.mu.Lock()
-	exportJobs.jobs[jobID] = job
-	exportJobs.mu.Unlock()
+	exportJobs.add(job)
 
 	// Bounded worker pool: songs are independent, so fan out to N workers.
 	// Concurrency is controlled by EXPORT_CONCURRENCY (default 4).
@@ -160,16 +199,16 @@ func (e *Exporter) ExportSongs(ctx context.Context, jobID string, userID int, so
 				job.setItem(i, "writing", "", "")
 				dest, err := e.exportOne(ctx, s, cfg)
 				switch {
-			case err == errSkipped:
-				job.setItem(i, "skipped", dest, "")
-				job.incSkipped()
-			case err != nil:
-				job.setItem(i, "failed", "", err.Error())
-				job.incFailed()
-			default:
-				job.setItem(i, "done", dest, "")
-				job.incDone()
-			}
+				case err == errSkipped:
+					job.setItem(i, "skipped", dest, "")
+					job.incSkipped()
+				case err != nil:
+					job.setItem(i, "failed", "", err.Error())
+					job.incFailed()
+				default:
+					job.setItem(i, "done", dest, "")
+					job.incDone()
+				}
 			}
 		}()
 	}
@@ -324,8 +363,9 @@ func (j *ExportJob) incFailed() {
 
 func (j *ExportJob) finish() {
 	j.mu.Lock()
-	defer j.mu.Unlock()
 	j.Status = "done"
+	j.finishedAt = time.Now()
+	j.mu.Unlock()
 }
 
 // Snapshot returns a copy of the job for safe serialization.
@@ -336,6 +376,7 @@ func (j *ExportJob) Snapshot() ExportJob {
 	copy(items, j.Items)
 	return ExportJob{
 		ID:      j.ID,
+		UserID:  j.UserID,
 		Total:   j.Total,
 		Done:    j.Done,
 		Skipped: j.Skipped,

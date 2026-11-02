@@ -2,8 +2,8 @@
 
 The short, repo-specific statement of the hard invariants. Reviewers
 (`.github/agents/`) read this first; it is the single source of truth for what
-matters in this repo. The generic phrasing rules live in
-`.github/instructions/code-review-generic.instructions.md`.
+matters in this repo. The review checklist, priorities, and verdict format
+live in `.github/instructions/code-review-biomuzak.instructions.md`.
 
 ## Hard invariants
 

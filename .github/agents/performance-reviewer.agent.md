@@ -105,7 +105,7 @@ A single report, in English:
    suggestion"), then what the change does and whether it is likely to matter at the
    scale this code runs at. Say plainly "No findings." when clean.
 2. **Findings** — grouped by priority, highest first, using the comment format from
-   `.github/instructions/code-review-generic.instructions.md`:
+   `.github/instructions/code-review-biomuzak.instructions.md`:
    - 🔴 CRITICAL — a change that will not survive production load, or that trades a
      hard invariant for speed (unbounded fan-out, dropped user predicate, a cache
      that can cross users).

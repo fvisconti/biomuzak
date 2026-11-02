@@ -71,6 +71,9 @@ services:
       # Tidal Integration (optional; leave blank to disable)
       - TIDAL_CLIENT_ID=${TIDAL_CLIENT_ID:-}
       - TIDAL_CLIENT_SECRET=${TIDAL_CLIENT_SECRET:-}
+      # Similar-songs / export tuning (defaults match pkg/config)
+      - SIMILAR_SONGS_LIMIT=${SIMILAR_SONGS_LIMIT:-3}
+      - EXPORT_CONCURRENCY=${EXPORT_CONCURRENCY:-4}
     volumes:
       - upload_data:/root/uploads
     healthcheck:
@@ -125,7 +128,7 @@ services:
       minio:
         condition: service_healthy
     entrypoint: >
-      /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; /usr/bin/mc mb myminio/${MINIO_BUCKET}; /usr/bin/mc anonymous set public myminio/${MINIO_BUCKET}; exit 0; "
+      /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}; /usr/bin/mc mb myminio/${MINIO_BUCKET}; exit 0; "
     networks:
       - biomuzak-network
 

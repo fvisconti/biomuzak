@@ -44,9 +44,13 @@ func (h *SongHandler) GetSimilarSongsHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 2. Find similar songs in the database.
-	// We'll fetch the top 5 similar songs, excluding the query song itself.
-	similarSongs, err := db.FindSimilarSongs(h.DB, songID, queryEmbedding, 5)
+	// 2. Find similar songs in the database. The count is configured via
+	// SIMILAR_SONGS_LIMIT (default 3); the query song itself is excluded.
+	limit := h.Cfg.SimilarSongsLimit
+	if limit < 1 {
+		limit = config.DefaultSimilarSongsLimit
+	}
+	similarSongs, err := db.FindSimilarSongs(h.DB, songID, queryEmbedding, limit)
 	if err != nil {
 		http.Error(w, "Failed to find similar songs", http.StatusInternalServerError)
 		return
@@ -69,7 +73,7 @@ func (h *SongHandler) DeleteSongHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Fetch the file path before deleting the row.
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	filePath, err := db.GetSongFilePath(r.Context(), h.DB, songID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, "Song not found", http.StatusNotFound)

@@ -53,7 +53,16 @@ type Config struct {
 
 	// Export concurrency: max parallel workers for the export job.
 	ExportConcurrency int
+
+	// SimilarSongsLimit: how many similar tracks to return for the playing song.
+	// Falls back to DefaultSimilarSongsLimit when unset or invalid.
+	SimilarSongsLimit int
 }
+
+// DefaultSimilarSongsLimit is the documented default for SIMILAR_SONGS_LIMIT
+// (.env.example, docs/DOCKER.md). Referenced by New() and by the similar-
+// songs handler's defensive clamp so the value is not duplicated.
+const DefaultSimilarSongsLimit = 3
 
 // New creates a new Config struct
 func New() *Config {
@@ -78,8 +87,8 @@ func New() *Config {
 		AdminEmail:        getEnv("ADMIN_EMAIL", "admin@local"),
 
 		MinIOEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
-		MinIOAccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinIOAccessKey: getEnv("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", ""),
 		MinIOBucket:    getEnv("MINIO_BUCKET", "music"),
 		MinIOUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
 
@@ -89,6 +98,8 @@ func New() *Config {
 		TidalClientSecret: getEnv("TIDAL_CLIENT_SECRET", ""),
 
 		ExportConcurrency: getEnvInt("EXPORT_CONCURRENCY", 4),
+
+		SimilarSongsLimit: getEnvInt("SIMILAR_SONGS_LIMIT", DefaultSimilarSongsLimit),
 	}
 
 	// Prefer explicit DATABASE_URL if provided

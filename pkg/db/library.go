@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"go-postgres-example/pkg/models"
@@ -211,10 +212,12 @@ func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*mod
 	return artists, albums, songs, nil
 }
 
-// GetSongFilePath retrieves the file path for a song by its ID
-func GetSongFilePath(db *sql.DB, songID int) (string, error) {
+// GetSongFilePath retrieves the file path for a song by its ID.
+// A context error (cancelled backfill job) is returned unwrapped so callers
+// can distinguish it from "not found".
+func GetSongFilePath(ctx context.Context, db *sql.DB, songID int) (string, error) {
 	var filePath string
-	err := db.QueryRow("SELECT file_path FROM songs WHERE id = $1", songID).Scan(&filePath)
+	err := db.QueryRowContext(ctx, "SELECT file_path FROM songs WHERE id = $1", songID).Scan(&filePath)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return "", fmt.Errorf("song with ID %d not found", songID)

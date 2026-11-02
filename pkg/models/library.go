@@ -7,9 +7,10 @@ import (
 
 // LibrarySong represents a song in the user's library, including the user's rating
 type LibrarySong struct {
-	ID              int           `json:"id"`
-	FingerprintHash string        `json:"fingerprint_hash"`
-	FilePath        string        `json:"file_path"`
+	ID int `json:"id"`
+	// Server-internal fields — never serialized to clients (see models.Song).
+	FingerprintHash string        `json:"-"`
+	FilePath        string        `json:"-"`
 	Title           string        `json:"title"`
 	Artist          string        `json:"artist"`
 	Album           string        `json:"album"`

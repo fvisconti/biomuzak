@@ -7,9 +7,11 @@ import (
 
 // Song represents a song in the database
 type Song struct {
-	ID              int           `json:"id"`
-	FingerprintHash string        `json:"fingerprint_hash"`
-	FilePath        string        `json:"file_path"`
+	ID int `json:"id"`
+	// Server-internal fields — never serialized to clients (file paths and
+	// the dedup fingerprint would leak the storage layout; prime directive 5).
+	FingerprintHash string        `json:"-"`
+	FilePath        string        `json:"-"`
 	Title           string        `json:"title"`
 	Artist          string        `json:"artist"`
 	Album           string        `json:"album"`

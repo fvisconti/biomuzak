@@ -184,7 +184,7 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	filePath, err := db.GetSongFilePath(r.Context(), h.DB, songID)
 	if err != nil {
 		respondWithXML(w, &Response{
 			Status: "failed",

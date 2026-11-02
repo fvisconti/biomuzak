@@ -201,16 +201,41 @@ When you upload a song, biomuzak:
 
 ### Finding Similar Songs
 
-1. **Go to any song** in your library
-2. Click the **•••** (more) button
-3. Select **Find Similar Songs**
-4. View a list of similar songs sorted by similarity score
+Similar tracks are tied to whatever is currently playing:
+
+1. **Play any song** (from the library, a playlist, or an album).
+2. In the **player bar** at the bottom, click **Similar**.
+3. A panel lists the closest tracks to the playing song, sorted by similarity
+   score. Click a row to play it.
+
+The number of tracks shown is configured by `SIMILAR_SONGS_LIMIT` (default 3).
 
 ### Tips for Better Recommendations
 
 - Upload more music for better matches
 - Similar songs work best with 50+ tracks in your library
 - Works across genres (finds similar sounds, not just genre matches)
+
+### For Admins: Embedding Backfill
+
+New uploads generate their embedding automatically, but songs imported before
+this feature (or uploads whose audio-processor call failed) have none, so they
+never appear as "similar". An admin can generate the missing embeddings in one
+shot:
+
+```bash
+# Start the job (admin token required). Returns a jobId immediately.
+curl -X POST -H "Authorization: Bearer $ADMIN_TOKEN" \
+  http://localhost:8080/api/admin/embeddings/backfill
+
+# Poll progress until "status" is "done".
+curl -H "Authorization: Bearer $ADMIN_TOKEN" \
+  "http://localhost:8080/api/admin/embeddings/backfill/status?jobId=<jobId>"
+```
+
+Only one backfill can run at a time — a second start while one is running
+returns `409 Conflict`. The job walks every song without an embedding and
+records per-song success/failure counts in the status snapshot.
 
 ## Using Mobile Apps
 

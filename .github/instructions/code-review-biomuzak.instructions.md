@@ -6,310 +6,89 @@ excludeAgent: ["coding-agent"]
 
 # biomuzak Code Review Instructions
 
-Comprehensive code review guidelines for biomuzak, a self-hosted music organizer,
-player, and streamer built in Go with a Python audio-processor microservice and a React
-frontend. This file is the project-specific specialization of
-`.github/instructions/code-review-generic.instructions.md`; read both. `REVIEW.md` (repo
-root) is the single source of truth for what matters in this repo.
+Review language: **English**. `REVIEW.md` (repo root) is the single source of truth
+for what failure looks like here. Detailed per-area rules live in the sibling
+instruction files — this file is the review **checklist** that ties them together.
+Do not restate a sibling file's rules in a finding; cite it.
 
-## Review Language
+## Priorities
 
-When performing a code review, respond in **English**.
+| Tier | Action | Examples |
+| :--- | :--- | :--- |
+| 🔴 CRITICAL | Block merge | Security hole, data loss/corruption, race, breaking API change, prime-directive violation |
+| 🟡 IMPORTANT | Requires discussion | Missing tests for a new path, N+1 query, memory leak, architecture drift, docs out of sync |
+| 🟢 SUGGESTION | Non-blocking | Naming, readability, minor convention drift, missing comments |
 
-## Review Priorities
+## Prime directives (a violation is always 🔴)
 
-When performing a code review, prioritize issues in the following order:
+1. **Shared catalog, per-user playlists.** The song catalog is global: any
+   authenticated user can list/stream/download any track; genre editing and song
+   deletion are admin-only (`is_admin` check in `pkg/middleware`). Every *playlist*
+   and *rating* query is scoped to the requesting user from the verified JWT claim —
+   never from a body field, path segment, or query parameter.
+2. **Parameterized SQL only.** `$1, $2, ...` bindings; no `fmt.Sprintf` into query
+   text, ever.
+3. **No magic literals.** Every tunable is an env var with a documented default.
+   Secrets (`JWT_SECRET`, `MINIO_*`, `TIDAL_*`) have no meaningful defaults and are
+   never logged or returned to a client. Missing required env fails fast at boot.
+4. **Migrations immutable.** Schema change = new numbered file in `db/migrations/`.
+   No DDL from application code; never edit an applied migration.
+5. **Explicit errors.** Check every error; handlers return sanitized messages and
+   never leak internals.
 
-### 🔴 CRITICAL (Block merge)
-- **Security**: Vulnerabilities, exposed secrets, authentication/authorization issues
-- **Correctness**: Logic errors, data corruption risks, race conditions
-- **Breaking Changes**: API contract changes without versioning
-- **Data Loss**: Risk of data loss or corruption
-- **biomuzak Prime Directives Violated**: playlist/rating scoping bypass, SQL built by
-  concatenation, secrets in defaults or logs, edited applied migration, unbounded vector
-  search
+## Checklist — check the diff against each file, flag violations with file:line
 
-### 🟡 IMPORTANT (Requires discussion)
-- **Code Quality**: Severe violations of SOLID principles, excessive duplication
-- **Test Coverage**: Missing tests for critical paths or new functionality
-- **Performance**: Obvious performance bottlenecks (N+1 queries, memory leaks)
-- **Architecture**: Significant deviations from established patterns
-- **Documentation Sync**: Docs not updated to match code changes
+- [ ] **Go** — `go.instructions.md`: idiomatic, `fmt.Errorf(...%w, err)` wrapping,
+  no file past ~800 lines, goroutines have clear exit paths.
+- [ ] **SQL** — `sql.instructions.md`: parameterized, playlist/rating queries carry
+  a `user_id` predicate, transactions commit/rollback, cascade cleanup on delete.
+- [ ] **Vector search** — `vchord.instructions.md`: bounded k-NN only
+  (`ORDER BY embedding <=> $1 LIMIT k`) through `pkg/db/similar.go`; no distance
+  comparison in `WHERE`; 38-dim vectors rejected before SQL is built; limits from
+  env vars, never hardcoded.
+- [ ] **Audio processor** — `audio-processor.instructions.md`: 38-dim contract
+  (13+13+6+6), min-max normalization, `tempfile.mkstemp` + `finally` cleanup, no
+  real audio in tests.
+- [ ] **Frontend** — `frontend.instructions.md`: API calls through
+  `src/api/client.js` (no ad-hoc fetch/axios in components), auth/playback state
+  via contexts, theme values not hardcoded, `npm run lint` passes.
+- [ ] **Tests** — `tests.instructions.md`: red/green (failing test first),
+  table-driven, offline (`go-sqlmock` + `httptest.Server`), fixtures in
+  `testdata/`, order-independent, `go test -race ./...` green.
+- [ ] **Docs sync** — `docs.instructions.md`: `docs/CHANGELOG.md` bullet under
+  `## [Unreleased]` for every user-visible change; new env var in `.env.example`
+  **and** `docs/DOCKER.md`; `docs/USER_GUIDE.md` for user-facing changes.
+- [ ] **Config & secrets** — `JWT_SECRET` / `MINIO_*` / `TIDAL_*` never logged,
+  never in a response body, never defaulted to something usable.
 
-### 🟢 SUGGESTION (Non-blocking improvements)
-- **Readability**: Poor naming, complex logic that could be simplified
-- **Optimization**: Performance improvements without functional impact
-- **Best Practices**: Minor deviations from conventions
-- **Documentation**: Missing or incomplete comments/documentation
+## Build gate — green before any review is valid
 
-## biomuzak-Specific Review Checklist
+```bash
+go build ./... && go vet ./... && go test -race ./...
+pytest                        # in audio-processor/, when touched
+npm run lint && npm run build # in frontend/, when touched
+```
 
-When performing a code review for biomuzak changes, verify the following:
+## Defect pairs (the repo's five recurring failure modes)
 
-### Prime Directives (Non-negotiable)
-- [ ] **Shared catalog, per-user playlists** (Directive 1): The song catalog is global
-  (any user can list/stream/download any track; genre editing and song
-  deletion are admin-only). Every *playlist* and *rating*
-  query is scoped to the requesting user from the verified JWT claim; never from a body
-  field, path segment, or query parameter. Admin-only routes require the `is_admin`
-  check in `pkg/middleware`.
-- [ ] **Parameterized SQL only** (Directive 2): `$1, $2, ...` bindings; no
-  `fmt.Sprintf` into query text.
-- [ ] **No magic literals** (Directive 3): Every tunable is an environment variable with
-  a documented default. Secrets (`JWT_SECRET`, `MINIO_*`, `TIDAL_*`) have no meaningful
-  defaults and are never logged or returned to a client.
-- [ ] **Migrations immutable** (Directive 4): Schema change is a new numbered file in
-  `db/migrations/`; no DDL from application code; no editing an applied migration.
-- [ ] **Explicit errors** (Directive 5): Every error is checked; handlers return
-  sanitized messages and never leak internals.
+| Never write | Write instead | Directive |
+| :--- | :--- | :--- |
+| `db.GetPlaylist(ctx, playlistID)` | `db.GetPlaylist(ctx, principal.UserID, playlistID)` | 1 — scoping from JWT |
+| `"… WHERE name LIKE '%" + name + "%'"` | `"… WHERE user_id = $1 AND name LIKE $2"` | 2 — parameterize |
+| empty `JWT_SECRET` ⇒ fallback to a default | fail fast: `errors.New("JWT_SECRET is required")` | 3 — no secret defaults |
+| `ORDER BY embedding <=> $1` (no limit) | `ORDER BY embedding <=> $1 LIMIT $2` | bounded k-NN |
+| embedding of any length passed to SQL | reject length ≠ 38 in `pkg/db/similar.go` first | 38-dim contract |
 
-### Architecture & Patterns
-- [ ] **Vector Search Bounds**: Only bounded k-NN through `pkg/db/similar.go`. No
-  distance comparison in `WHERE` clause. Similarity filters are index-side only and an
-  untrusted radius is clamped in Go.
-- [ ] **Embedding Width**: Embeddings are 38-dim; a vector whose length is not 38 is
-  rejected before SQL is built.
-- [ ] **SQL Repositories**: Hand-written parameterized SQL through pgx/v4. No ORM.
-  Parameters properly bound.
-- [ ] **HTTP Routes**: Routes registered on the `chi` router. Handlers return sanitized
-  errors; auth and admin middleware applied where required.
+## Contract rules
 
-### Go Style
-- [ ] **Follows `.github/instructions/go.instructions.md`**: Idiomatic Go, consistent
-  with repository patterns
-- [ ] **Package Scope**: Files focused; no file grows past ~800 lines
-- [ ] **Red/Green TDD**: Behavior change starts with failing test. No behavior changes
-  without red test first.
-- [ ] **Error Wrapping**: Uses `fmt.Errorf(...%w, err)` for proper error chains
-
-### Database & SQL
-- [ ] **Follows `.github/instructions/sql.instructions.md`**: PostgreSQL 18 patterns,
-  vchord usage
-- [ ] **Migrations**: New numbered file in `db/migrations/`, immutable once merged
-- [ ] **Playlist/rating scoping**: Every playlist and rating query carries a `user_id`
-  predicate. Catalog (songs/albums) queries are intentionally global.
-- [ ] **No Hardcoded Limits**: Vector search limit, pagination, batch sizes are from
-  environment variables
-
-### Testing
-- [ ] **Follows `.github/instructions/tests.instructions.md`**: Red/green TDD,
-  table-driven tests, fixture policy
-- [ ] **Offline unit tests**: `go-sqlmock` and `httptest.Server`; no live Postgres,
-  MinIO, or audio-processor
-- [ ] **Testdata**: Fixtures stored in `testdata/`, never inline; no large audio files
-  committed
-- [ ] **Test Isolation**: No test pollution; tests pass independently and in any order
-- [ ] **Race Detection**: Passes `go test -race ./...` for concurrency safety
-
-### Configuration & Secrets
-- [ ] **No Secret Defaults**: Secrets fail fast when missing; never have meaningful
-  default values
-- [ ] **Secrets Write-Only**: `JWT_SECRET`, `MINIO_*`, `TIDAL_*` never logged or
-  returned to a client
-- [ ] **`.env.example` Sync**: New env var added to `.env.example` and `docs/DOCKER.md`
-
-### Documentation Sync
-- [ ] **Docs-Sync Table**: Checked against `.github/instructions/docs.instructions.md`;
-  all required docs updated
-- [ ] **`docs/CHANGELOG.md`**: User-visible changes have bullets under `## [Unreleased]`
-- [ ] **`docs/DOCKER.md`**: Deployment/docker-compose/env changes documented
-- [ ] **`docs/USER_GUIDE.md`**: User-facing feature changes documented
-
-## biomuzak-Specific Language & Framework Checks
-
-When performing a code review, verify:
-
-### Go Idioms & Patterns
-- [ ] **Concurrency Safety**: Code reviewed for race conditions; passes
-  `go test -race ./...`
-- [ ] **Interface Design**: Interfaces are small and focused; no bloated interfaces
-- [ ] **Error Handling**: Uses explicit `if err != nil` checks; no error-ignoring
-  patterns
-- [ ] **Nil Handling**: Nil pointers properly checked; no nil dereferences
-- [ ] **Goroutine Cleanup**: All goroutines have clear exit paths; no goroutine leaks
-- [ ] **Channel Usage**: Channels properly closed by sender; receives check for closure
-
-### PostgreSQL & pgx
-- [ ] **Prepared Statements**: All queries use parameterized statements; no SQL
-  injection risks
-- [ ] **Connection Pooling**: Uses pgx pool, no raw connection leaks
-- [ ] **Transaction Handling**: Transactions properly committed/rolled back
-- [ ] **Index Usage**: New queries leverage appropriate indexes
-- [ ] **EXPLAIN Plans**: Complex queries verified with EXPLAIN for performance
-
-### Vector Search
-- [ ] **VectorChord Usage**: Follows `.github/instructions/vchord.instructions.md`
-- [ ] **Dimension Consistency**: Query and stored vectors are both 38-dim
-- [ ] **k-NN Bounds**: All searches use `LIMIT k`, no unbounded loops
-- [ ] **Distance Comparisons**: Only in retrieval layer, never in WHERE clauses
-- [ ] **Index Selection**: `vchordrq` with `vector_cosine_ops`
-
-### Uploads & Storage
-- [ ] **Upload Validation**: File type and size validated; filenames sanitized
-- [ ] **MinIO**: Object keys derived from safe, non-user-controlled paths
-- [ ] **Cleanup**: Deleting a song removes its stored file and dependent rows
-
-### Audio Processor (Essentia / FastAPI)
-- [ ] **Follows `.github/instructions/audio-processor.instructions.md`**
-- [ ] **38-dim contract**: Embedding is still 13+13+6+6 = 38; a dimension change is a
-  BREAKING change with a migration + `pkg/db/similar.go` update + changelog
-- [ ] **Normalization**: min-max to [0, 1] with the constant-vector guard; no silent
-  switch to z-score/L2
-- [ ] **Temp file hygiene**: `tempfile.mkstemp` + cleanup in `finally`; no path from
-  user input
-- [ ] **No real audio in tests**: `es.MonoLoader`/`es.Extractor` mocked; assert shape
-  and range, not exact values
-
-### Frontend (React / Vite / Chakra)
-- [ ] **Follows `.github/instructions/frontend.instructions.md`**
-- [ ] **API calls via `src/api/client.js`**: no ad-hoc `fetch`/`axios` in components
-- [ ] **State via contexts**: auth from `AuthContext`, playback from `PlayerContext`;
-  no `localStorage` reads in components
-- [ ] **No secrets client-side**: no API keys/tokens in frontend code
-- [ ] **Chakra theme**: colors/spacing from `src/theme.js`, not hardcoded
-- [ ] **ESLint clean**: `npm run lint` passes
-
-## biomuzak Build & Deployment
-
-When performing a code review, verify:
-
-### Build & Verification
-- [ ] **`go build ./...`**: Change compiles
-- [ ] **`go vet ./...`**: No vet findings
-- [ ] **`go test -race ./...`**: No race conditions detected
-- [ ] **`pytest`** (audio-processor): Python suite green where the change touches it
-- [ ] **Docker**: Dockerfile and docker-compose.yml updated if needed
-
-### Configuration & Runtime
-- [ ] **Environment Variables**: All new config uses env vars, not hardcoded
-- [ ] **Boot Failures**: Missing required env (e.g. `JWT_SECRET`) cause startup failure
-  (fast-fail)
-- [ ] **Observability**: Errors logged with context; no silent failures
-
-## biomuzak Contract Rules
-
-When performing a code review, enforce:
-
-1. **Shared catalog, per-user playlists**: The song catalog is global. A *playlist* or
-   *rating* operation is scoped to the requesting user from the JWT; the same operation
-   is not reachable with another user's playlists or ratings.
-2. **Changelog**: Every user-visible change has a `docs/CHANGELOG.md` bullet under
+1. Per-user boundary: a playlist or rating of user A is unreachable as user B, even
+   by guessing ids. Catalog (songs/albums) access is intentionally global.
+2. Every user-visible change has a `docs/CHANGELOG.md` bullet under
    `## [Unreleased]`.
-3. **Conventional Commits**: Commit messages follow `feat(scope):`, `fix(scope):`,
-   `refactor(scope):`, `docs:` format.
+3. Conventional Commits: `feat(scope):`, `fix(scope):`, `refactor(scope):`, `docs:`.
 
-## Checklist Template
+## Verdict format
 
-When completing a review, mark each item:
-
-```
-- [x] Requirement met
-- [ ] Requirement not met
-- [n/a] Not applicable
-```
-
-## Examples of biomuzak-Specific Issues to Flag
-
-### ❌ Playlist/rating scoping bypass (Directive 1 Violation)
-```go
-// BAD: playlist id from the path, no user predicate — leaks another user's playlist
-playlistID := r.URL.Path
-playlist, err := db.GetPlaylist(ctx, playlistID)
-```
-
-```go
-// GOOD: playlist id from the path, scoped to the JWT user
-principal, err := auth.ExtractPrincipal(r)
-if err != nil {
-    return nil, fmt.Errorf("extract principal: %w", err)
-}
-playlist, err := db.GetPlaylist(ctx, principal.UserID, playlistID)
-```
-
-### ❌ SQL built by concatenation (Directive 2 Violation)
-```go
-// BAD: string concatenation
-query := "SELECT * FROM playlists WHERE name LIKE '%" + name + "%'"
-```
-
-```go
-// GOOD: parameterized
-query := "SELECT * FROM playlists WHERE user_id = $1 AND name LIKE $2"
-rows, err := db.Query(ctx, query, principal.UserID, "%"+name+"%")
-```
-
-### ❌ Secret in a default (Directive 3 Violation)
-```go
-// BAD: meaningful default for a secret
-secret := os.Getenv("JWT_SECRET")
-if secret == "" {
-    secret = "default-secret-change-in-production"
-}
-```
-
-```go
-// GOOD: fail fast when the secret is missing
-secret := os.Getenv("JWT_SECRET")
-if secret == "" {
-    return nil, errors.New("JWT_SECRET is required")
-}
-```
-
-### ❌ Unbounded vector search (Arch Violation)
-```sql
--- BAD: no limit
-SELECT embedding <=> $1 AS distance FROM song_embeddings ORDER BY distance
-```
-
-```sql
--- GOOD: bounded k-NN
-SELECT embedding <=> $1 AS distance FROM song_embeddings ORDER BY distance LIMIT $2
-```
-
-## Additional Resources
-
-For more information on biomuzak and code review:
-
-- **Go Instructions**: `.github/instructions/go.instructions.md` — Go idioms for this repo
-- **SQL Instructions**: `.github/instructions/sql.instructions.md` — PostgreSQL patterns
-- **VectorChord Guide**: `.github/instructions/vchord.instructions.md` — vector search patterns
-- **Audio Processor**: `.github/instructions/audio-processor.instructions.md` — Essentia/FastAPI rules
-- **Frontend**: `.github/instructions/frontend.instructions.md` — React/Vite/Chakra rules
-- **Test Instructions**: `.github/instructions/tests.instructions.md` — Red/green TDD policy
-- **Docs Sync**: `.github/instructions/docs.instructions.md` — which docs to update
-- **Review invariants**: `REVIEW.md` — what failure looks like in this repo
-
-## Project Context
-
-**Tech Stack**:
-- Go 1.25 with `chi` router, `pgx/v4`, `golang-jwt`, `dhowden/tag`, `minio-go`
-- PostgreSQL 18 with vchord for 38-dim cosine vector search
-- Python FastAPI + Essentia audio-processor microservice
-- React + Vite frontend
-
-**Architecture**: Self-hosted music organizer/player/streamer; uploads are stored in
-MinIO, metadata in Postgres, 38-dim embeddings generated by the audio-processor and used
-for "similar songs" via bounded k-NN.
-
-**Key Files**:
-- Entry point: `cmd/server/main.go`
-- HTTP handlers: `pkg/handlers/`
-- Database: `pkg/db/` (vector search in `pkg/db/similar.go`)
-- Auth & middleware: `pkg/auth/`, `pkg/middleware/`
-- Storage: `pkg/storage/` (MinIO)
-- Subsonic API: `pkg/subsonic/`
-- Migrations: `db/migrations/`
-- Audio processor: `audio-processor/`
-
-**Build Tool**: `go build ./...`, `go test -race ./...`, `go vet ./...`, `pytest`
-(audio-processor), `docker compose up`
-
-**Testing**: Table-driven tests, fixtures in `testdata/`, red/green TDD mandatory,
-`go-sqlmock` + `httptest.Server` for offline unit tests
-
-**Code Style**:
-- Follows `.github/instructions/go.instructions.md`
-- Conventional commits
-- Explicit error handling
-- Parameterized SQL only
-- Red/green TDD (failing test before behavior change)
+Mark each checklist item `- [x]` met, `- [ ]` not met (with finding), or
+`- [n/a]`. Findings are ordered 🔴 → 🟡 → 🟢, each with file:line and a one-line
+fix. Do not edit code during review — disposition belongs to the author.
