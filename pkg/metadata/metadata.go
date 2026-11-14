@@ -155,6 +155,10 @@ func (p *Processor) ProcessFile(filePath string, userID int, playlistID int) err
 		}
 		song.ID = songID
 
+		// 8b. Tag the stored object with genre/artist (E4). Best-effort:
+		// tags are informational, a tagging failure must not fail the upload.
+		p.tagSongObject(permanentPath, song, genreName)
+
 		// 9. Get and save song embedding (using the original temp file path)
 		embedding, err := p.getEmbeddingsFromService(context.Background(), filePath)
 		if err != nil {
@@ -347,6 +351,22 @@ func (p *Processor) moveToUploadDir(tempPath string, hash string) (string, error
 
 	log.Printf("Uploaded file %s to storage as %s", tempPath, objectName)
 	return objectName, nil
+}
+
+// tagSongObject applies the E4 informational object tags (genre, artist) to
+// a stored object. Failures are logged, never returned: tags are metadata
+// for browsing/filtering outside the app and must not break the upload path.
+func (p *Processor) tagSongObject(objectName string, song *models.Song, genreName string) {
+	tagMap := map[string]string{}
+	if genreName != "" {
+		tagMap["genre"] = genreName
+	}
+	if song.Artist != "" {
+		tagMap["artist"] = song.Artist
+	}
+	if err := p.Storage.TagObject(context.Background(), objectName, tagMap); err != nil {
+		log.Printf("Failed to tag object %s: %v", objectName, err)
+	}
 }
 
 func generateFileHash(filePath string) (string, error) {

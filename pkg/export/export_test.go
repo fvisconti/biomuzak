@@ -36,10 +36,17 @@ func (m *mockStorage) GetPresignedURL(ctx context.Context, objectName string, ex
 	return nil, nil
 }
 func (m *mockStorage) DeleteObject(ctx context.Context, objectName string) error { return nil }
+func (m *mockStorage) TagObject(ctx context.Context, objectName string, tags map[string]string) error {
+	return nil
+}
+func (m *mockStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	return nil, nil
+}
 
 // bytesReadSeekCloser wraps a *bytes.Reader to satisfy storage.ReadSeekCloser.
 type bytesReadSeekCloser struct{ r *bytes.Reader }
-func (b *bytesReadSeekCloser) Read(p []byte) (int, error)  { return b.r.Read(p) }
+
+func (b *bytesReadSeekCloser) Read(p []byte) (int, error) { return b.r.Read(p) }
 func (b *bytesReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
 	return b.r.Seek(offset, whence)
 }

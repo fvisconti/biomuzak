@@ -126,6 +126,8 @@ func (im *Importer) ImportTrack(ctx context.Context, userID int, meta TrackMeta,
 		if err := im.Storage.UploadFile(ctx, objectName, bytes.NewReader(decrypted), int64(len(decrypted)), contentTypeForExt(ext)); err != nil {
 			return nil, fmt.Errorf("failed to upload to storage: %w", err)
 		}
+		// E4: informational object tags (genre/artist); best-effort.
+		im.tagObject(ctx, objectName, &meta)
 
 		// 6. Insert song row with the provided (possibly edited) metadata.
 		songID, err = saveTidalSong(ctx, im.DB, hash, objectName, meta, int64(len(decrypted)))
@@ -140,6 +142,22 @@ func (im *Importer) ImportTrack(ctx context.Context, userID int, meta TrackMeta,
 	}
 
 	return &ImportResult{SongID: songID, Dedup: exists}, nil
+}
+
+// tagObject applies the E4 informational object tags (genre/artist) to a
+// stored object. Best-effort: tagging failures are logged, never returned,
+// so a MinIO hiccup cannot fail an otherwise successful import.
+func (im *Importer) tagObject(ctx context.Context, objectName string, meta *TrackMeta) {
+	tagMap := map[string]string{}
+	if meta.Genre != "" {
+		tagMap["genre"] = meta.Genre
+	}
+	if meta.Artist != "" {
+		tagMap["artist"] = meta.Artist
+	}
+	if err := im.Storage.TagObject(ctx, objectName, tagMap); err != nil {
+		log.Printf("failed to tag object %s: %v", objectName, err)
+	}
 }
 
 // songExists checks whether a song with the given fingerprint hash exists.

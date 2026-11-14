@@ -22,9 +22,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"io"
+	"net/url"
 	"regexp"
 	"testing"
 	"time"
+
+	"go-postgres-example/pkg/storage"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
 	"github.com/stretchr/testify/assert"
@@ -228,4 +233,60 @@ func TestAddToPlaylist_SetsGenreOnNewPlaylist(t *testing.T) {
 	err = im.AddToPlaylist(context.Background(), 1, 42, "Deep House Mix")
 	assert.NoError(t, err)
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// ---- E4: object tags ----
+
+type tagCaptureStorage struct {
+	tagged map[string]map[string]string
+	tagErr error
+}
+
+func (s *tagCaptureStorage) UploadFile(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error {
+	return nil
+}
+func (s *tagCaptureStorage) GetFileStream(ctx context.Context, objectName string) (storage.ReadSeekCloser, error) {
+	return nil, nil
+}
+func (s *tagCaptureStorage) GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error) {
+	return nil, nil
+}
+func (s *tagCaptureStorage) DeleteObject(ctx context.Context, objectName string) error { return nil }
+func (s *tagCaptureStorage) TagObject(ctx context.Context, objectName string, tags map[string]string) error {
+	if s.tagged == nil {
+		s.tagged = map[string]map[string]string{}
+	}
+	s.tagged[objectName] = tags
+	return s.tagErr
+}
+func (s *tagCaptureStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	return s.tagged[objectName], nil
+}
+
+func TestImporter_TagObject_RecordsGenreAndArtist(t *testing.T) {
+	st := &tagCaptureStorage{}
+	im := &Importer{Storage: st}
+
+	im.tagObject(context.Background(), "hash.mp3", &TrackMeta{Title: "T", Artist: "Artist X", Genre: "Deep House"})
+
+	assert.Equal(t,
+		map[string]string{"genre": "Deep House", "artist": "Artist X"},
+		st.tagged["hash.mp3"])
+}
+
+func TestImporter_TagObject_FailureNotFatal(t *testing.T) {
+	st := &tagCaptureStorage{tagErr: errors.New("minio down")}
+	im := &Importer{Storage: st}
+
+	// Must log and return, not panic or propagate.
+	im.tagObject(context.Background(), "hash.mp3", &TrackMeta{Artist: "A"})
+}
+
+func TestImporter_TagObject_EmptyValuesOmitted(t *testing.T) {
+	st := &tagCaptureStorage{}
+	im := &Importer{Storage: st}
+
+	im.tagObject(context.Background(), "hash.mp3", &TrackMeta{Artist: "Only Artist"})
+
+	assert.Equal(t, map[string]string{"artist": "Only Artist"}, st.tagged["hash.mp3"])
 }

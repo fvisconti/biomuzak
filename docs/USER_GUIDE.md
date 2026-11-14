@@ -142,7 +142,9 @@ The library displays all your music in a sortable, filterable table:
 Use the filter options to find music:
 - **Artist**: View all songs by an artist
 - **Album**: Browse complete albums
-- **Genre**: Filter by musical genre
+- **Genre**: Filter by musical genre. Each stored audio file also carries
+  `genre`/`artist` tags in MinIO, so the library can be browsed from outside
+  the app; changing a song's genre keeps the tag in sync.
 - **Year**: Find music from specific years
 - **Rating**: Show only your favorite songs
 

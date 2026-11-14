@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Object tags for genre/artist** (E4, single-bucket design): uploaded and
+  Tidal-imported audio objects are tagged in MinIO with `genre` and `artist`
+  (`StorageService.TagObject`/`GetObjectTags`); changing a song's genre
+  (`PUT /api/songs/{id}/genre`) refreshes the `genre` tag while preserving
+  the others. Tagging is best-effort (logged, never fails the upload or the
+  genre update). No bucket layout change, no re-key migration.
+
 ### Added
 - **Tidal link-paste import** (E5): `POST /api/tidal/import/link` accepts a
   Tidal playlist/album/track URL (`pkg/tidal/url.go` parser), resolves it

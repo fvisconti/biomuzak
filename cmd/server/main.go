@@ -71,7 +71,7 @@ func main() {
 	// Initialize handlers
 	authHandler := handlers.NewAuthHandler(conn, cfg, minioStorage)
 	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
-	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
+	libraryHandler := handlers.NewLibraryHandler(conn, cfg, minioStorage)
 	playlistHandler := handlers.NewPlaylistHandler(conn, cfg, minioStorage)
 	songHandler := handlers.NewSongHandler(conn, cfg, minioStorage)
 	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)

@@ -73,6 +73,12 @@ func (fakeImportStorage) GetPresignedURL(ctx context.Context, objectName string,
 	return nil, nil
 }
 func (fakeImportStorage) DeleteObject(ctx context.Context, objectName string) error { return nil }
+func (fakeImportStorage) TagObject(ctx context.Context, objectName string, tags map[string]string) error {
+	return nil
+}
+func (fakeImportStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	return nil, nil
+}
 
 func TestImportHandler_ResolvesGenreFromSourceName(t *testing.T) {
 	db, mock, err := sqlmock.New()

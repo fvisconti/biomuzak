@@ -57,7 +57,7 @@ can be revisited.
 | **E1** Global catalog visibility | 4 | ANY user sees ANY track; playlists + ratings stay per-user | — | ✅ |
 | **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ✅ |
 | **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ✅ |
-| **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
+| **E4** MinIO object tagging (single bucket) | 2 | Object tags for genre/artist; genre changes re-tag | E3 | ✅ |
 | **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ✅ |
 | **E6** Sortable playlists, default most-recent | 5 | GUI-sortable playlists; default most-recent-first | — | ✅ |
 | **E7** Subsonic API completeness | 6 | Any third-party Subsonic client can connect and use it | E1, E2 | ⬜ |
@@ -176,29 +176,33 @@ trigram cases in `pkg/db/library_test.go`, `pkg/tidal/import_test.go`,
 
 ## E4 — MinIO per-genre buckets + object tagging
 
-**Goal**: one bucket per genre (highly populated); object tags for artist/label.
+**Goal**: per-genre storage organisation; object tags for artist/genre.
 
-**Current state**: single flat bucket (`MINIO_BUCKET`, default `music`), key =
-`sha256+ext`, no tagging, bucket fixed at construction.
+**Design decision (2026-11-14, user)**: single flat bucket, **genre as a
+MinIO object tag** — no per-genre buckets, no re-key migration. The hash key
+is unchanged (dedup intact); tags are informational metadata for browsing/
+filtering outside the app. Cost of a genre change: one `PutObjectTagging`
+call (cheap, best-effort, never fails the genre update).
 
 **Changes**:
-- `pkg/storage/storage.go`: dynamic bucket selection (bucket name derived from
-  genre, e.g. `music-<slug>`); create-on-demand; keep hash-based key for dedup.
-- Add MinIO object tagging via `PutObjectOptions.UserTags` (genre/artist/label).
-- Move the bucket/key decision to **after** genre resolution (genre is known only
-  post-processing / post-match).
-- **Migration**: re-key/relocate existing objects into their genre buckets + tag
-  them (one-time job).
-- Handle **genre change**: moving a song's genre moves its object between buckets
-  (copy + delete) — document the cost.
-- Update `.env.example` + `docs/DOCKER.md` for the new bucket-naming scheme.
+- `pkg/storage/storage.go`: `StorageService` gains `TagObject` /
+  `GetObjectTags` (MinIO `PutObjectTagging`/`GetObjectTagging`, v7.2.1
+  `tags` package).
+- Upload path (`pkg/metadata` `ProcessFile`) and Tidal import
+  (`pkg/tidal/import.go` `ImportTrack`) tag the object with `genre` +
+  `artist` right after the upload — genre is already resolved by then.
+  Tag failures are logged, never fatal.
+- Genre change (`PUT /api/songs/{id}/genre`, `LibraryHandler`) refreshes the
+  `genre` tag, preserving existing tags (e.g. `artist`).
 
-**Verification**: import into two genres → objects land in two buckets with tags;
-streaming still resolves the file; existing library re-keyed without data loss.
+**Verification**: unit tests only (no Docker on the dev host — integration
+verified in the final integration stage): `TestTagSongObject_*` (metadata),
+`TestImporter_TagObject_*` (tidal), `TestUpdateSongGenreHandler_RetagsObject`
+(handlers). Streaming still resolves by unchanged hash key.
 
-**Risk**: highest of the set (storage layout + migration). Keep behind E3.
+**Risk**: low-medium (storage metadata only; no layout change, no migration).
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-14)
 
 ---
 

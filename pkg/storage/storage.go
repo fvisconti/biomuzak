@@ -10,6 +10,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/minio/minio-go/v7/pkg/tags"
 )
 
 // ReadSeekCloser combines io.ReadSeeker and io.Closer
@@ -24,6 +25,11 @@ type StorageService interface {
 	GetFileStream(ctx context.Context, objectName string) (ReadSeekCloser, error)
 	GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error)
 	DeleteObject(ctx context.Context, objectName string) error
+	// TagObject replaces the object's user tags (E4: genre/artist). Tags are
+	// informational metadata; callers treat failures as non-fatal.
+	TagObject(ctx context.Context, objectName string, tags map[string]string) error
+	// GetObjectTags returns the object's current user tags as a map.
+	GetObjectTags(ctx context.Context, objectName string) (map[string]string, error)
 }
 
 // MinIOStorage implements StorageService using MinIO
@@ -104,4 +110,26 @@ func (s *MinIOStorage) DeleteObject(ctx context.Context, objectName string) erro
 		return fmt.Errorf("failed to delete object %s: %w", objectName, err)
 	}
 	return nil
+}
+
+// TagObject replaces the object's user tags. Used for the E4 genre/artist
+// object metadata.
+func (s *MinIOStorage) TagObject(ctx context.Context, objectName string, tagMap map[string]string) error {
+	otags, err := tags.NewTags(tagMap, true)
+	if err != nil {
+		return fmt.Errorf("failed to build tags for object %s: %w", objectName, err)
+	}
+	if err := s.Client.PutObjectTagging(ctx, s.Bucket, objectName, otags, minio.PutObjectTaggingOptions{}); err != nil {
+		return fmt.Errorf("failed to tag object %s: %w", objectName, err)
+	}
+	return nil
+}
+
+// GetObjectTags returns the object's user tags as a map.
+func (s *MinIOStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	otags, err := s.Client.GetObjectTagging(ctx, s.Bucket, objectName, minio.GetObjectTaggingOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tags for object %s: %w", objectName, err)
+	}
+	return otags.ToMap(), nil
 }

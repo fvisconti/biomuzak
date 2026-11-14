@@ -42,10 +42,16 @@ func (f *fakeStreamStorage) GetPresignedURL(ctx context.Context, objectName stri
 	return nil, nil
 }
 func (f *fakeStreamStorage) DeleteObject(ctx context.Context, objectName string) error { return nil }
+func (f *fakeStreamStorage) TagObject(ctx context.Context, objectName string, tags map[string]string) error {
+	return nil
+}
+func (f *fakeStreamStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	return nil, nil
+}
 
 type bytesReadSeekCloser struct{ r *bytes.Reader }
 
-func (b *bytesReadSeekCloser) Read(p []byte) (int, error)         { return b.r.Read(p) }
+func (b *bytesReadSeekCloser) Read(p []byte) (int, error) { return b.r.Read(p) }
 func (b *bytesReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
 	return b.r.Seek(offset, whence)
 }
