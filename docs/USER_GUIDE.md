@@ -251,6 +251,14 @@ The **Tidal** page imports audio from Tidal straight into your library.
 4. Choose download quality and whether to include singles, then start the import.
 5. The import runs in the background — progress (done/failed) is shown until complete. Downloaded tracks are processed by the audio-processor service (Tidal credentials must be configured on the server).
 
+### Paste a Link
+
+Instead of browsing, paste a Tidal **playlist**, **album**, or **track** link
+(e.g. `https://tidal.com/playlist/pl…`) into the box below the import bar and
+press **Import link** — the linked tracks are resolved, downloaded, and
+imported with the same progress view (video items are skipped; album and
+playlist links feed the name into genre auto-matching).
+
 ### Genre Auto-Matching
 
 If you give the import a playlist name that resembles a known genre

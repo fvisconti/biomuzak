@@ -58,7 +58,7 @@ can be revisited.
 | **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ✅ |
 | **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ✅ |
 | **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
-| **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ⬜ |
+| **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ✅ |
 | **E6** Sortable playlists, default most-recent | 5 | GUI-sortable playlists; default most-recent-first | — | ✅ |
 | **E7** Subsonic API completeness | 6 | Any third-party Subsonic client can connect and use it | E1, E2 | ⬜ |
 | **E8** (optional) Adopt tiddl | 1 | Replace hand-rolled fetch/decrypt with `tiddl` | only if D1 overridden | ⬜ |
@@ -220,7 +220,18 @@ Download is hand-rolled (stream fetch + AES-128-CBC decrypt) — works.
 **Verification**: paste a playlist URL → tracks download, dedup by hash, appear in
 library with the matched genre; album/track URLs also work.
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-14) — `pkg/tidal/url.go` parses tidal.com / play.tidal.h5
+track/album/playlist URLs (numeric IDs; playlist IDs are `pl`+16–32 hex) and
+rejects everything else. `POST /api/tidal/import/link` resolves the link via
+new `Client` lookups (`GetTrack`; string-ID playlist variants `GetPlaylistByURLID` /
+`GetPlaylistTracksByURLID` — the v1 API accepts URL playlist IDs in path form,
+worth an integration check) plus the existing album lookups, paginates lists
+(capped at 2000 tracks), skips video items, and starts the same batch import
+as the browse flow via the shared `startImportJob` (E3b genre matching applies
+to album/playlist links). `frontend/src/pages/Tidal.jsx` gains a paste-link
+box reusing `importStatus` polling. Tests: `pkg/tidal/url_test.go`,
+`TestLinkImportHandler_*` in `pkg/handlers/tidal_test.go` (fake Tidal API +
+sqlmock).
 
 ---
 

@@ -12,7 +12,7 @@ import {
 } from 'react-icons/fi';
 import {
     pairStart, pairStatus, getStatus, saveSettings, disconnect,
-    getLibrary, getAlbum, getPlaylist, startImport, importStatus
+    getLibrary, getAlbum, getPlaylist, startImport, importLink, importStatus
 } from '../api/tidal';
 
 const QUALITIES = [
@@ -506,6 +506,7 @@ const Tidal = () => {
 
     const [selected, setSelected] = useState({});
     const [playlistName, setPlaylistName] = useState('');
+    const [linkUrl, setLinkUrl] = useState('');
     const [importJob, setImportJob] = useState(null);
     const importPollRef = useRef(null);
 
@@ -645,6 +646,29 @@ const Tidal = () => {
             setSelected({});
         } catch (e) {
             toast({ title: e.message || 'Failed to start import', status: 'error', duration: 3000 });
+        }
+    };
+
+    const handleLinkImport = async () => {
+        const url = linkUrl.trim();
+        if (!url) return;
+        try {
+            const res = await importLink(url);
+            setImportJob({
+                id: res.data.jobId,
+                total: 0,
+                done: 0,
+                failed: 0,
+                status: 'running',
+                items: [],
+            });
+            startImportPolling(res.data.jobId);
+            setLinkUrl('');
+        } catch (e) {
+            const msg = typeof e.response?.data === 'string' && e.response.data
+                ? e.response.data
+                : e.message || 'Failed to import link';
+            toast({ title: msg, status: 'error', duration: 3000 });
         }
     };
 
@@ -856,6 +880,36 @@ const Tidal = () => {
                                     onClick={handleImport}
                                 >
                                     Import {selectedCount > 0 ? `${selectedCount} ` : ''}selected
+                                </Button>
+                            </HStack>
+                        </Box>
+
+                        <Box
+                            p={4}
+                            border="1px solid"
+                            borderColor="gray.700"
+                            borderRadius="md"
+                            bg="gray.800"
+                        >
+                            <HStack spacing={3} align="flex-end" flexWrap="wrap">
+                                <FormControl flex="1" minW="260px">
+                                    <FormLabel fontSize="sm" mb={1}>
+                                        Or paste a Tidal link (playlist, album, or track)
+                                    </FormLabel>
+                                    <Input
+                                        placeholder="https://tidal.com/playlist/pl…"
+                                        value={linkUrl}
+                                        onChange={(e) => setLinkUrl(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleLinkImport()}
+                                    />
+                                </FormControl>
+                                <Button
+                                    colorScheme="green"
+                                    leftIcon={<FiDownload />}
+                                    isDisabled={linkUrl.trim() === ''}
+                                    onClick={handleLinkImport}
+                                >
+                                    Import link
                                 </Button>
                             </HStack>
                         </Box>

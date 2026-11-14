@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Tidal link-paste import** (E5): `POST /api/tidal/import/link` accepts a
+  Tidal playlist/album/track URL (`pkg/tidal/url.go` parser), resolves it
+  through the existing Tidal client lookups (video items skipped, lists
+  paginated with a 2000-track cap), and starts the same background batch
+  import as the browse flow. `POST /api/tidal/import` behaviour is unchanged
+  (shared `startImportJob`). The Tidal page gains a "paste a Tidal link" box
+  that reuses the existing job progress view; album/playlist links feed the
+  source name into E3 genre auto-matching.
 - **Genre catalogue + playlist-name matching** (E3): Tidal imports now match the
   source playlist/album name against the genre catalogue with an index-backed
   pg_trgm query; imported songs and the import playlist inherit the matched

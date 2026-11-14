@@ -16,9 +16,9 @@ const defaultAPIBaseURL = "https://api.tidal.com/v1"
 // Client is a Tidal REST API client. It obtains a valid access token per call
 // via the embedded AuthClient.
 type Client struct {
-	Auth     *AuthClient
-	BaseURL  string
-	HTTP     *http.Client
+	Auth    *AuthClient
+	BaseURL string
+	HTTP    *http.Client
 }
 
 // NewClient builds a Tidal REST client.
@@ -34,25 +34,25 @@ func NewClient(auth *AuthClient) *Client {
 
 // Resource is a Tidal resource (track, album, playlist, artist).
 type Resource struct {
-	ID          int    `json:"id"`
-	Title       string `json:"title"`
-	ArtistName  string `json:"artistName"`
-	AlbumName   string `json:"albumName"`
-	Year        int    `json:"year"`
-	Duration    int    `json:"duration"`
-	Explicit    bool   `json:"explicit"`
-	IsVideo     bool   `json:"isVideo"`
-	IsAtmos     bool   `json:"isAtmos"`
-	IsSingle    bool   `json:"isSingle"`
-	Copyright   string `json:"copyright"`
+	ID         int    `json:"id"`
+	Title      string `json:"title"`
+	ArtistName string `json:"artistName"`
+	AlbumName  string `json:"albumName"`
+	Year       int    `json:"year"`
+	Duration   int    `json:"duration"`
+	Explicit   bool   `json:"explicit"`
+	IsVideo    bool   `json:"isVideo"`
+	IsAtmos    bool   `json:"isAtmos"`
+	IsSingle   bool   `json:"isSingle"`
+	Copyright  string `json:"copyright"`
 }
 
 // Page is a paginated Tidal list response.
 type Page struct {
-	Offset      int        `json:"offset"`
-	Limit       int        `json:"limit"`
-	TotalNumItems int      `json:"totalNumItems"`
-	Items       []Resource `json:"items"`
+	Offset        int        `json:"offset"`
+	Limit         int        `json:"limit"`
+	TotalNumItems int        `json:"totalNumItems"`
+	Items         []Resource `json:"items"`
 }
 
 // do performs an authenticated GET against the Tidal API and decodes JSON.
@@ -174,6 +174,38 @@ func (c *Client) GetPlaylistTracks(ctx context.Context, userID, playlistID, offs
 	q.Set("limit", strconv.Itoa(limit))
 	var p Page
 	if err := c.do(ctx, userID, fmt.Sprintf("/playlists/%d/tracks", playlistID), q, &p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// GetTrack returns a single track.
+func (c *Client) GetTrack(ctx context.Context, userID, trackID int) (*Resource, error) {
+	var r Resource
+	if err := c.do(ctx, userID, fmt.Sprintf("/tracks/%d", trackID), nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// GetPlaylistByURLID fetches a playlist by the ID from its web URL (a
+// "pl…" string; the v1 API accepts it in path form). The ID is validated by
+// ParseTidalURL before it ever reaches a request path.
+func (c *Client) GetPlaylistByURLID(ctx context.Context, userID int, playlistID string) (*Resource, error) {
+	var r Resource
+	if err := c.do(ctx, userID, "/playlists/"+playlistID, nil, &r); err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// GetPlaylistTracksByURLID returns the tracks in a URL-identified playlist.
+func (c *Client) GetPlaylistTracksByURLID(ctx context.Context, userID int, playlistID string, offset, limit int) (*Page, error) {
+	q := url.Values{}
+	q.Set("offset", strconv.Itoa(offset))
+	q.Set("limit", strconv.Itoa(limit))
+	var p Page
+	if err := c.do(ctx, userID, "/playlists/"+playlistID+"/tracks", q, &p); err != nil {
 		return nil, err
 	}
 	return &p, nil

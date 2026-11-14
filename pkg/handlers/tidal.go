@@ -22,11 +22,11 @@ import (
 
 // TidalHandler handles Tidal pairing, browsing, and import.
 type TidalHandler struct {
-	DB      *sql.DB
-	Cfg     *config.Config
-	Storage storage.StorageService
-	Auth    *tidal.AuthClient
-	Client  *tidal.Client
+	DB       *sql.DB
+	Cfg      *config.Config
+	Storage  storage.StorageService
+	Auth     *tidal.AuthClient
+	Client   *tidal.Client
 	Importer *tidal.Importer
 
 	// pendingPairs holds in-flight device authorizations.
@@ -162,8 +162,8 @@ func (h *TidalHandler) PairStatusHandler(w http.ResponseWriter, r *http.Request)
 	h.removePair(pairID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":         "authorized",
-		"tidalUsername":  tr.User.Username,
+		"status":        "authorized",
+		"tidalUsername": tr.User.Username,
 	})
 }
 
@@ -198,10 +198,10 @@ func (h *TidalHandler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"connected":    true,
+		"connected":     true,
 		"tidalUsername": creds.TidalUsername,
-		"expiresAt":    creds.AccessTokenExpiresAt,
-		"config":       creds.Config,
+		"expiresAt":     creds.AccessTokenExpiresAt,
+		"config":        creds.Config,
 	})
 }
 
@@ -362,48 +362,32 @@ func (h *TidalHandler) PlaylistHandler(w http.ResponseWriter, r *http.Request) {
 
 // ImportRequest is the body for POST /api/tidal/import.
 type ImportRequest struct {
-	Tracks       []tidal.TrackMeta `json:"tracks"`
-	PlaylistName string            `json:"playlist_name"`
+	Tracks       []tidal.TrackMeta  `json:"tracks"`
+	PlaylistName string             `json:"playlist_name"`
 	Config       *tidal.TidalConfig `json:"config,omitempty"`
 }
 
-// ImportHandler starts a batch import job.
-func (h *TidalHandler) ImportHandler(w http.ResponseWriter, r *http.Request) {
-	userID, ok := middleware.GetUserIDFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var req ImportRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-	if len(req.Tracks) == 0 {
-		http.Error(w, "No tracks to import", http.StatusBadRequest)
-		return
-	}
-
-	cfg, err := tidal.GetConfig(r.Context(), h.DB, userID)
+// startImportJob applies E3b source-genre matching and launches a detached
+// batch import for the given tracks. Shared by the browse-based import and
+// the link-paste import (E5).
+func (h *TidalHandler) startImportJob(ctx context.Context, userID int, tracks []tidal.TrackMeta, playlistName string, reqCfg *tidal.TidalConfig) (string, error) {
+	cfg, err := tidal.GetConfig(ctx, h.DB, userID)
 	if err != nil {
-		http.Error(w, "Failed to load Tidal config", http.StatusInternalServerError)
-		return
+		return "", fmt.Errorf("failed to load tidal config: %w", err)
 	}
-	if req.Config != nil {
-		if v, err := req.Config.Validate(); err == nil {
+	if reqCfg != nil {
+		if v, err := reqCfg.Validate(); err == nil {
 			cfg = v
 		}
 	}
 
 	jobID := tidal.NewJobID()
-	playlistName := req.PlaylistName
 
 	// E3b: resolve the genre catalogue match for the source name once, before
 	// the job starts, so every imported song inherits it. Non-fatal: the import
 	// proceeds without an inferred genre when the match fails.
 	if playlistName != "" {
-		if _, err := h.Importer.ApplySourceGenre(r.Context(), req.Tracks, playlistName); err != nil {
+		if _, err := h.Importer.ApplySourceGenre(ctx, tracks, playlistName); err != nil {
 			log.Printf("genre match for import source %q failed: %v", playlistName, err)
 		}
 	}
@@ -424,8 +408,171 @@ func (h *TidalHandler) ImportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Use a detached context so the job outlives the HTTP request.
-	job := tidal.RunBatch(context.Background(), jobID, userID, req.Tracks, cfg, importTrack)
+	job := tidal.RunBatch(context.Background(), jobID, userID, tracks, cfg, importTrack)
 	_ = job
+	return jobID, nil
+}
+
+// ImportHandler starts a batch import job.
+func (h *TidalHandler) ImportHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req ImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Tracks) == 0 {
+		http.Error(w, "No tracks to import", http.StatusBadRequest)
+		return
+	}
+
+	jobID, err := h.startImportJob(r.Context(), userID, req.Tracks, req.PlaylistName, req.Config)
+	if err != nil {
+		log.Printf("start import job: %v", err)
+		http.Error(w, "Failed to start import", http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID})
+}
+
+// LinkImportRequest is the body for POST /api/tidal/import/link (E5).
+type LinkImportRequest struct {
+	URL string `json:"url"`
+}
+
+// resolveLink maps a parsed Tidal link to importable tracks plus the source
+// name (album/playlist title) used for E3b genre matching.
+func (h *TidalHandler) resolveLink(ctx context.Context, userID int, link *tidal.TidalLink) ([]tidal.TrackMeta, string, error) {
+	switch link.Type {
+	case tidal.LinkTrack:
+		id, err := strconv.Atoi(link.ID)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid track id: %w", err)
+		}
+		res, err := h.Client.GetTrack(ctx, userID, id)
+		if err != nil {
+			return nil, "", err
+		}
+		return resourcesToMetas([]tidal.Resource{*res}), "", nil
+	case tidal.LinkAlbum:
+		id, err := strconv.Atoi(link.ID)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid album id: %w", err)
+		}
+		album, err := h.Client.GetAlbum(ctx, userID, id)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err := h.fetchAllPage(func(offset, limit int) (*tidal.Page, error) {
+			return h.Client.GetAlbumTracks(ctx, userID, id, offset, limit)
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return resourcesToMetas(items), album.Title, nil
+	case tidal.LinkPlaylist:
+		pl, err := h.Client.GetPlaylistByURLID(ctx, userID, link.ID)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err := h.fetchAllPage(func(offset, limit int) (*tidal.Page, error) {
+			return h.Client.GetPlaylistTracksByURLID(ctx, userID, link.ID, offset, limit)
+		})
+		if err != nil {
+			return nil, "", err
+		}
+		return resourcesToMetas(items), pl.Title, nil
+	}
+	return nil, "", fmt.Errorf("unsupported link type")
+}
+
+// fetchAllPage pages through a Tidal list endpoint, capped so a pathological
+// totalNumItems cannot loop the import forever.
+func (h *TidalHandler) fetchAllPage(page func(offset, limit int) (*tidal.Page, error)) ([]tidal.Resource, error) {
+	const pageSize = 500
+	const maxTotal = 2000
+
+	var all []tidal.Resource
+	offset := 0
+	for len(all) < maxTotal {
+		p, err := page(offset, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, p.Items...)
+		offset += len(p.Items)
+		if len(p.Items) == 0 || offset >= p.TotalNumItems {
+			break
+		}
+	}
+	return all, nil
+}
+
+// resourcesToMetas converts Tidal resources to import metadata, skipping
+// video items (not music).
+func resourcesToMetas(items []tidal.Resource) []tidal.TrackMeta {
+	out := make([]tidal.TrackMeta, 0, len(items))
+	for _, it := range items {
+		if it.IsVideo {
+			continue
+		}
+		out = append(out, tidal.TrackMeta{
+			TrackID: it.ID,
+			Title:   it.Title,
+			Artist:  it.ArtistName,
+			Album:   it.AlbumName,
+			Year:    it.Year,
+		})
+	}
+	return out
+}
+
+// LinkImportHandler resolves a pasted Tidal track/album/playlist URL and
+// starts the same batch import as the browse flow (E5).
+func (h *TidalHandler) LinkImportHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req LinkImportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	link, err := tidal.ParseTidalURL(req.URL)
+	if err != nil {
+		http.Error(w, "Not a recognized Tidal link (track, album, or playlist)", http.StatusBadRequest)
+		return
+	}
+
+	tracks, playlistName, err := h.resolveLink(r.Context(), userID, link)
+	if err != nil {
+		if errors.Is(err, tidal.ErrNotConnected) {
+			http.Error(w, "Not connected to Tidal", http.StatusServiceUnavailable)
+			return
+		}
+		log.Printf("tidal link resolve failed: %v", err)
+		http.Error(w, "Failed to resolve Tidal link", http.StatusBadGateway)
+		return
+	}
+	if len(tracks) == 0 {
+		http.Error(w, "No importable tracks found in link", http.StatusNotFound)
+		return
+	}
+
+	jobID, err := h.startImportJob(r.Context(), userID, tracks, playlistName, nil)
+	if err != nil {
+		log.Printf("start import job: %v", err)
+		http.Error(w, "Failed to start import", http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"jobId": jobID})
 }
 

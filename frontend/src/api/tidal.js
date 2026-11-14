@@ -18,6 +18,7 @@ export const getPlaylist = (playlistId) => apiClient.get(`/tidal/playlists/${pla
 
 // Import
 export const startImport = (payload) => apiClient.post('/tidal/import', payload);
+export const importLink = (url) => apiClient.post('/tidal/import/link', { url });
 export const importStatus = (jobId) =>
     apiClient.get('/tidal/import/status', { params: { jobId } });
 

@@ -95,6 +95,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 			r.Get("/playlists/{playlistID}", tidalHandler.PlaylistHandler)
 
 			r.Post("/import", tidalHandler.ImportHandler)
+			r.Post("/import/link", tidalHandler.LinkImportHandler)
 			r.Get("/import/status", tidalHandler.ImportStatusHandler)
 		})
 
