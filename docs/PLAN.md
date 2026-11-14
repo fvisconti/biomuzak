@@ -4,7 +4,7 @@
 > status of each epic (⬜ not started · 🟨 in progress · ✅ done · ⛔ blocked) and
 > the decision log as development proceeds.
 >
-> **Last updated**: 2026-11-01
+> **Last updated**: 2026-11-14
 
 ## User story
 
@@ -56,7 +56,7 @@ can be revisited.
 |---|---|---|---|---|
 | **E1** Global catalog visibility | 4 | ANY user sees ANY track; playlists + ratings stay per-user | — | ✅ |
 | **E2** Similar tracks for the playing song | 7 | Show 3 similar tracks w.r.t. the playing song | E1 | ✅ |
-| **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ⬜ |
+| **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ✅ |
 | **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
 | **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ⬜ |
 | **E6** Sortable playlists, default most-recent | 5 | GUI-sortable playlists; default most-recent-first | — | ⬜ |
@@ -155,7 +155,22 @@ threshold 0.3) exists but is only fed the upload *folder* name. No GIN index on
 **Verification**: import a playlist named e.g. "Deep House Mix" → matched to
 "House"/"Deep House"; songs inherit the genre; matching is a single indexed query.
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-14) — migration `0007` GIN `gin_trgm_ops` index on
+`genres.name`; `FindGenreByTrigramSearch` switched to the index-backed `%`
+operator (threshold = `pg_trgm.similarity_threshold` GUC, default 0.3,
+inclusive — the old hardcoded predicate was strict `> 0.3`). Tidal import: `Importer.ApplySourceGenre` matches the
+source (playlist/album) name once per import and stamps `TrackMeta.Genre`;
+`saveTidalSong` resolves the matched genre by lookup and binds `genre_id`
+(lookup only — a deleted genre is never re-created by an import); `AddToPlaylist`
+sets the playlist genre via `db.SetPlaylistGenreIfEmpty` (never overwrites an
+explicit genre). Client-supplied `genre` fields in the import body are
+ignored (`TrackMeta.Genre` has no JSON tag). Catalogue management: seed migration `0008` (30 starter
+genres, idempotent) + admin routes `GET/POST/DELETE /api/admin/genres`
+(`middleware.AdminOnly` group; delete maps 0 rows → 404, duplicate create →
+409). The Tidal API exposes no genre metadata on tracks, so the
+"Tidal's own metadata" fallback does not apply. New tests: `pkg/db/genre_test.go`,
+trigram cases in `pkg/db/library_test.go`, `pkg/tidal/import_test.go`,
+`pkg/handlers/tidal_test.go`, `pkg/handlers/genre_test.go`.
 
 ---
 

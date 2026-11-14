@@ -78,12 +78,13 @@ func main() {
 	tidalHandler := handlers.NewTidalHandler(conn, cfg, minioStorage)
 	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage, cfg.ExportConcurrency)
 	backfillHandler := handlers.NewBackfillHandler(conn, cfg, minioStorage)
+	genreHandler := handlers.NewGenreHandler(conn)
 
 	// Initialize the Subsonic handler
 	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)
 
 	// Initialize the router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, backfillHandler, cfg.CORSAllowedOrigins)
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, backfillHandler, genreHandler, cfg.CORSAllowedOrigins)
 
 	// Start server with explicit timeouts to mitigate Slowloris and
 	// connection-exhaustion attacks.

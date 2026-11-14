@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Genre catalogue + playlist-name matching** (E3): Tidal imports now match the
+  source playlist/album name against the genre catalogue with an index-backed
+  pg_trgm query; imported songs and the import playlist inherit the matched
+  genre. New migration `0007` (GIN `gin_trgm_ops` index on `genres.name`) and
+  `0008` (seed of 30 starter genres). Admin endpoints `GET/POST/DELETE
+  /api/admin/genres` manage the catalogue (admin-only; deleting a genre leaves
+  songs intact via `ON DELETE SET NULL`).
 - `docs/PLAN.md`: a living development plan for the Tidal-first feature set
   (global catalog visibility, similar-track suggestions, genre catalogue +
   playlist-name matching, per-genre MinIO buckets + object tagging, Tidal

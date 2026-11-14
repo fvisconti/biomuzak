@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"regexp"
 	"testing"
 	"time"
@@ -120,6 +121,51 @@ func TestGetSongsByUserID_RatingIsolation(t *testing.T) {
 	assert.Len(t, songs, 1)
 	// User 42 has not rated this song → rating must be NULL, not another user's.
 	assert.False(t, songs[0].Rating.Valid, "rating must be NULL for a song the requesting user has not rated")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestFindGenreByTrigramSearch_IndexBacked asserts the genre matcher filters
+// with the pg_trgm `%` similarity operator, which the GIN index
+// idx_genres_name_trgm (migration 0007, gin_trgm_ops) accelerates. A bare
+// `similarity(name, $1) > 0.3` predicate would force a sequential scan over
+// genres on every upload/import, so it must not be the filter.
+// Given/When/Then: given a genre name, when searching, the query filters with
+// `name % $1` and ranks by descending similarity; when nothing matches it
+// returns ("", nil), not an error.
+var trigramFilterPattern = `WHERE\s+name\s+%\s+\$1`
+
+func TestFindGenreByTrigramSearch_IndexBacked(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(trigramFilterPattern).
+		WithArgs("Deep House Mix").
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Deep House"))
+
+	got, err := FindGenreByTrigramSearch(db, "Deep House Mix")
+	assert.NoError(t, err)
+	assert.Equal(t, "Deep House", got)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestFindGenreByTrigramSearch_NoMatch asserts a no-match yields ("", nil).
+func TestFindGenreByTrigramSearch_NoMatch(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("failed to create mock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(trigramFilterPattern).
+		WithArgs("Zzzyzx").
+		WillReturnError(sql.ErrNoRows)
+
+	got, err := FindGenreByTrigramSearch(db, "Zzzyzx")
+	assert.NoError(t, err)
+	assert.Equal(t, "", got)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

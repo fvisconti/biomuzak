@@ -30,6 +30,14 @@ type Genre struct {
 	Name string `json:"name"`
 }
 
+// GenreWithCount is a genre plus the number of songs referencing it
+// (admin catalogue listing).
+type GenreWithCount struct {
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	SongCount int    `json:"song_count"`
+}
+
 // Album represents an album in the database
 type Album struct {
 	ID     int    `json:"id"`

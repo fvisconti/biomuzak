@@ -13,7 +13,7 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler, tidalHandler *handlers.TidalHandler, exportHandler *handlers.ExportHandler, backfillHandler *handlers.BackfillHandler, corsAllowedOrigins string) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler, tidalHandler *handlers.TidalHandler, exportHandler *handlers.ExportHandler, backfillHandler *handlers.BackfillHandler, genreHandler *handlers.GenreHandler, corsAllowedOrigins string) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Enable CORS for cross-origin requests from the frontend
@@ -111,6 +111,11 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 			r.Delete("/api/admin/users/{id}", authHandler.DeleteUser)
 			r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
 			r.Delete("/api/admin/songs/{songID}", songHandler.DeleteSongHandler)
+
+			// Genre catalogue (E3c): list / create / delete, admin-only.
+			r.Get("/api/admin/genres", genreHandler.ListHandler)
+			r.Post("/api/admin/genres", genreHandler.CreateHandler)
+			r.Delete("/api/admin/genres/{genreID}", genreHandler.DeleteHandler)
 
 			// Embedding backfill (cold-start): generate embeddings for songs
 			// that lack them so "similar songs" works for the whole catalog.

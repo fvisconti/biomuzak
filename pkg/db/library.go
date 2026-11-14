@@ -268,11 +268,16 @@ func GetSongsByIDs(db *sql.DB, songIDs []int) (map[int]*models.Song, error) {
 	return songs, rows.Err()
 }
 
-// FindGenreByTrigramSearch finds the closest matching genre using trigram similarity.
+// FindGenreByTrigramSearch finds the closest matching genre using trigram
+// similarity. The `%` operator (index-backed by the gin_trgm_ops index
+// idx_genres_name_trgm, migration 0007) does the filtering; its threshold is
+// the pg_trgm.similarity_threshold GUC (default 0.3, inclusive — the old
+// hardcoded predicate was strict `> 0.3`). Ranking stays an explicit
+// similarity() sort.
 func FindGenreByTrigramSearch(db *sql.DB, genreName string) (string, error) {
 	var bestMatch string
 	query := `
-		SELECT name FROM genres WHERE similarity(name, $1) > 0.3
+		SELECT name FROM genres WHERE name % $1
 		ORDER BY similarity(name, $1) DESC
 		LIMIT 1
 	`

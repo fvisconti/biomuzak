@@ -35,12 +35,17 @@ func NewImporter(client *Client, db *sql.DB, s storage.StorageService) *Importer
 }
 
 // TrackMeta is the (possibly user-edited) metadata for a track to import.
+// Genre is stamped by the server only — ApplySourceGenre matches the import
+// source name and sets it (E3b); empty when the name matches nothing. It has
+// no JSON tag on purpose: a client-supplied "genre" in the import body must
+// never reach the shared genre catalogue (genre editing is admin-only).
 type TrackMeta struct {
 	TrackID int    `json:"track_id"`
 	Title   string `json:"title"`
 	Artist  string `json:"artist"`
 	Album   string `json:"album"`
 	Year    int    `json:"year"`
+	Genre   string `json:"-"`
 }
 
 // ImportResult reports the outcome of a single track import.
@@ -48,6 +53,24 @@ type ImportResult struct {
 	SongID int    `json:"song_id"`
 	Dedup  bool   `json:"dedup"` // true if the file already existed
 	Error  string `json:"error,omitempty"`
+}
+
+// ApplySourceGenre matches the import source name (playlist/album name) against
+// the genre catalogue and stamps the result on every track, so imported songs
+// inherit the matched genre (E3b). It returns the matched genre ("" when there
+// is no match or the name is empty). A missing match is not an error.
+func (im *Importer) ApplySourceGenre(ctx context.Context, tracks []TrackMeta, sourceName string) (string, error) {
+	if sourceName == "" {
+		return "", nil
+	}
+	genre, err := db.FindGenreByTrigramSearch(im.DB, sourceName)
+	if err != nil {
+		return "", fmt.Errorf("genre match failed: %w", err)
+	}
+	for i := range tracks {
+		tracks[i].Genre = genre
+	}
+	return genre, nil
 }
 
 // ImportTrack fetches, decrypts, stores, and registers a single Tidal track.
@@ -132,18 +155,38 @@ func songExists(db *sql.DB, hash string) (bool, int, error) {
 	return true, id, nil
 }
 
-// saveTidalSong inserts a song row using the provided metadata.
+// saveTidalSong inserts a song row using the provided metadata. A non-empty
+// meta.Genre is resolved to a genre_id by lookup only (no insert — a deleted
+// genre must stay deleted); a vanished genre degrades to a NULL genre.
 func saveTidalSong(ctx context.Context, db *sql.DB, hash, objectName string, meta TrackMeta, fileSize int64) (int, error) {
+	var genreID sql.NullInt64
+	if meta.Genre != "" {
+		var id int
+		// Lookup only — never re-insert. The genre was already matched by
+		// ApplySourceGenre; if the row vanished in the meantime (admin
+		// delete), the song keeps its data with a NULL genre instead of
+		// resurrecting the deleted row.
+		err := db.QueryRowContext(ctx, `SELECT id FROM genres WHERE name = $1`, meta.Genre).Scan(&id)
+		switch {
+		case err == sql.ErrNoRows:
+			log.Printf("tidal import: genre %q not found, saving song without genre", meta.Genre)
+		case err != nil:
+			return 0, err
+		default:
+			genreID = sql.NullInt64{Int64: int64(id), Valid: true}
+		}
+	}
+
 	query := `
 		INSERT INTO songs (
-			fingerprint_hash, file_path, title, artist, album, year,
+			fingerprint_hash, file_path, title, artist, album, year, genre_id,
 			duration, bitrate, file_size, last_modified
-		) VALUES ($1, $2, $3, $4, $5, $6, 0, 0, $7, NOW())
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, 0, 0, $8, NOW())
 		RETURNING id
 	`
 	var songID int
 	err := db.QueryRowContext(ctx, query,
-		hash, objectName, meta.Title, meta.Artist, meta.Album, meta.Year, fileSize,
+		hash, objectName, meta.Title, meta.Artist, meta.Album, meta.Year, genreID, fileSize,
 	).Scan(&songID)
 	if err != nil {
 		return 0, err
@@ -173,6 +216,13 @@ func (im *Importer) AddToPlaylist(ctx context.Context, userID, songID int, playl
 	pl, err := db.GetOrCreatePlaylist(im.DB, userID, playlistName)
 	if err != nil {
 		return fmt.Errorf("failed to get or create playlist: %w", err)
+	}
+	// E3b: give the playlist a genre matched from its name, without overwriting
+	// one set explicitly. A match failure is non-fatal for the import.
+	if genre, err := db.FindGenreByTrigramSearch(im.DB, playlistName); err == nil && genre != "" {
+		if err := db.SetPlaylistGenreIfEmpty(im.DB, pl.ID, genre); err != nil {
+			log.Printf("Failed to set genre %q on playlist %d: %v", genre, pl.ID, err)
+		}
 	}
 	return db.AddSongToPlaylist(im.DB, pl.ID, songID, 0)
 }

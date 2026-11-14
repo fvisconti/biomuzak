@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -397,6 +398,15 @@ func (h *TidalHandler) ImportHandler(w http.ResponseWriter, r *http.Request) {
 
 	jobID := tidal.NewJobID()
 	playlistName := req.PlaylistName
+
+	// E3b: resolve the genre catalogue match for the source name once, before
+	// the job starts, so every imported song inherits it. Non-fatal: the import
+	// proceeds without an inferred genre when the match fails.
+	if playlistName != "" {
+		if _, err := h.Importer.ApplySourceGenre(r.Context(), req.Tracks, playlistName); err != nil {
+			log.Printf("genre match for import source %q failed: %v", playlistName, err)
+		}
+	}
 
 	// importTrack closure: import + optionally add to playlist.
 	importTrack := func(ctx context.Context, uid int, meta tidal.TrackMeta, c tidal.TidalConfig) (*tidal.ImportResult, error) {

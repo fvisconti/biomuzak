@@ -10,9 +10,10 @@ Welcome to biomuzak! This guide will help you get started with your self-hosted 
 4. [Browsing Your Library](#browsing-your-library)
 5. [Creating Playlists](#creating-playlists)
 6. [Discovering Similar Songs](#discovering-similar-songs)
-7. [Using Mobile Apps](#using-mobile-apps)
-8. [Tips & Tricks](#tips--tricks)
-9. [Troubleshooting](#troubleshooting)
+7. [Importing from Tidal](#importing-from-tidal)
+8. [Using Mobile Apps](#using-mobile-apps)
+9. [Tips & Tricks](#tips--tricks)
+10. [Troubleshooting](#troubleshooting)
 
 ## Installation
 
@@ -236,6 +237,26 @@ curl -H "Authorization: Bearer $ADMIN_TOKEN" \
 Only one backfill can run at a time — a second start while one is running
 returns `409 Conflict`. The job walks every song without an embedding and
 records per-song success/failure counts in the status snapshot.
+
+## Importing from Tidal
+
+The **Tidal** page imports audio from Tidal straight into your library.
+
+### How It Works
+
+1. Open the **Tidal** page and search for an artist, playlist, or track.
+2. Pick the tracks you want (you can edit title/artist/year per track in the table).
+3. Optionally enter a **playlist name** — imported songs are collected into a playlist with that name.
+4. Choose download quality and whether to include singles, then start the import.
+5. The import runs in the background — progress (done/failed) is shown until complete. Downloaded tracks are processed by the audio-processor service (Tidal credentials must be configured on the server).
+
+### Genre Auto-Matching
+
+If you give the import a playlist name that resembles a known genre
+(e.g. **“Deep House Mix”**), the server matches it against the genre catalogue
+and stamps the matched genre on the imported songs and the playlist. You can
+refine it afterwards from the library. The genre itself is matched by name
+similarity — “deep house mix” → “Deep House”.
 
 ## Using Mobile Apps
 
