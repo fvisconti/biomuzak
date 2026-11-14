@@ -59,7 +59,7 @@ can be revisited.
 | **E3** Genre catalogue + playlist-name matching | 3 | Match each downloaded playlist to a genre by name (cheap) | — | ✅ |
 | **E4** MinIO per-genre buckets + object tagging | 2 | One bucket per genre; object tags for artist/label | E3 | ⬜ |
 | **E5** Tidal link-paste download | 1 | Paste a Tidal URL → download | E3 | ⬜ |
-| **E6** Sortable playlists, default most-recent | 5 | GUI-sortable playlists; default most-recent-first | — | ⬜ |
+| **E6** Sortable playlists, default most-recent | 5 | GUI-sortable playlists; default most-recent-first | — | ✅ |
 | **E7** Subsonic API completeness | 6 | Any third-party Subsonic client can connect and use it | E1, E2 | ⬜ |
 | **E8** (optional) Adopt tiddl | 1 | Replace hand-rolled fetch/decrypt with `tiddl` | only if D1 overridden | ⬜ |
 
@@ -242,7 +242,22 @@ and non-persistent; no `added_at` on `playlist_songs`.
 **Verification**: add tracks → newest first by default; sort by title persists
 across reloads; drag-reorder still works.
 
-**Status**: ⬜
+**Status**: ✅ (2026-11-14) — migration `0009`: `playlist_songs.added_at
+TIMESTAMPTZ` (backfilled with migration time) and `playlists.sort_key
+VARCHAR(20) DEFAULT 'added_at'`. `GetPlaylistSongs` defaults to `ORDER BY
+ps.added_at DESC, ps.position ASC` and accepts a whitelisted sort key
+(added_at / title / artist / position — only literal whitelist values reach
+query text, same pattern as the library's `sortBy`); unknown keys fall back to
+the default instead of erroring. `AddSongToPlaylist` inserts with
+`added_at = NOW()`. API: `GET /api/playlists/{id}?sort_by=...` and
+`PUT /api/playlists/{id}` with `sort_key` (400 on a key outside the
+whitelist, 404 on non-owner). `GET` without `?sort_by=` uses the persisted
+key; `PUT /api/playlists/{id}/order` persists a full displayed order (bulk
+position rewrite, validated against the playlist's contents). GUI
+(PlaylistDetails): default most-recent first, column headers persist the sort
+via `sort_key`; drag-reorder persists the full on-screen order and switches
+the playlist to `position`; new Added column.
+Tests: `pkg/db/playlist_test.go`, `pkg/handlers/playlist_test.go`.
 
 ---
 

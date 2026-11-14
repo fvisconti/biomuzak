@@ -10,9 +10,6 @@ import { usePlayer } from '../context/PlayerContext';
 import { useDrag } from '../context/DragContext';
 import { usePlaylists } from '../context/PlaylistContext';
 import {
-    closestCenter,
-} from '@dnd-kit/core';
-import {
     arrayMove,
     SortableContext,
     verticalListSortingStrategy,
@@ -20,14 +17,17 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 
 import SortableSongRow from '../components/Music/SortableSongRow';
+import apiClient from '../api/client';
 
 const PlaylistDetails = () => {
     const { playlistID } = useParams();
     const navigate = useNavigate();
     const [playlist, setPlaylist] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [sortBy, setSortBy] = useState('position');
-    const [sortOrder, setSortOrder] = useState('asc');
+    // Sort is server-side and persisted per playlist (E6): the playlist's
+    // stored sort_key decides the order; clicking a column header persists a
+    // new key. added_at (most recent first) is the default.
+    const [sortKey, setSortKey] = useState('added_at');
     const { token } = useAuth();
     const toast = useToast();
     const { playPlaylist } = usePlayer();
@@ -35,31 +35,20 @@ const PlaylistDetails = () => {
     const { refreshPlaylists } = usePlaylists();
     const emptyBorderColor = useColorModeValue('gray.300', 'gray.700');
 
-    const handleSort = (column) => {
-        if (sortBy === column) {
-            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortBy(column);
-            setSortOrder('asc');
+    const handleSort = async (column) => {
+        if (sortKey === column) return; // direction is fixed server-side
+        setSortKey(column);
+        setPlaylist((p) => (p ? { ...p, sort_key: column } : p));
+        try {
+            await apiClient.put(`/playlists/${playlistID}`, { sort_key: column });
+            fetchPlaylist();
+        } catch {
+            toast({ title: "Failed to save sort order", status: "error" });
         }
     };
 
-    const sortedSongs = React.useMemo(() => {
-        if (!playlist || !playlist.songs) return [];
-        const songs = [...playlist.songs];
-        if (sortBy === 'position') return songs;
-
-        return songs.sort((a, b) => {
-            let valA = a[sortBy] || '';
-            let valB = b[sortBy] || '';
-            if (typeof valA === 'string') valA = valA.toLowerCase();
-            if (typeof valB === 'string') valB = valB.toLowerCase();
-
-            if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-            if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-            return 0;
-        });
-    }, [playlist, sortBy, sortOrder]);
+    // The server returns songs in the persisted order already.
+    const sortedSongs = playlist && playlist.songs ? playlist.songs : [];
 
     const handleDragEnd = async (event) => {
         const { active, over } = event;
@@ -75,18 +64,15 @@ const PlaylistDetails = () => {
                 setPlaylist({ ...playlist, songs: newSongs });
 
                 try {
-                    await fetch(`/api/playlists/${playlistID}/reorder`, {
-                        method: 'PUT',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            song_id: active.id,
-                            new_position: newIndex + 1
-                        })
+                    // Persist the whole displayed order (the playlist may have
+                    // been sorted, so a single-song move would not match what
+                    // the user just arranged), then switch to position order.
+                    await apiClient.put(`/playlists/${playlistID}/order`, {
+                        song_ids: newSongs.map((s) => s.id)
                     });
-                } catch (error) {
+                    await apiClient.put(`/playlists/${playlistID}`, { sort_key: 'position' });
+                    setSortKey('position');
+                } catch {
                     toast({ title: "Failed to save order", status: "error" });
                 }
             }
@@ -101,18 +87,19 @@ const PlaylistDetails = () => {
 
     const fetchPlaylist = async () => {
         try {
-            const res = await fetch(`/api/playlists/${playlistID}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setPlaylist(data);
-            } else {
-                toast({ title: "Failed to load playlist", status: "error" });
-                navigate('/playlists');
-            }
+            // No sort override: the server applies the playlist's persisted
+            // sort key.
+            const res = await apiClient.get(`/playlists/${playlistID}`);
+            const data = res.data;
+            setPlaylist(data);
+            if (data.sort_key) setSortKey(data.sort_key);
         } catch (error) {
             console.error(error);
+            if (error.response && error.response.status === 404) {
+                navigate('/playlists');
+            } else {
+                toast({ title: "Failed to load playlist", status: "error" });
+            }
         } finally {
             setLoading(false);
         }
@@ -239,16 +226,15 @@ const PlaylistDetails = () => {
                                 <Tr>
                                     <Th w="40px"></Th>
                                     <Th cursor="pointer" onClick={() => handleSort('title')}>
-                                        Title {sortBy === 'title' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                        Title {sortKey === 'title' && <FiChevronUp />}
                                     </Th>
                                     <Th cursor="pointer" onClick={() => handleSort('artist')}>
-                                        Artist {sortBy === 'artist' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                        Artist {sortKey === 'artist' && <FiChevronUp />}
                                     </Th>
-                                    <Th cursor="pointer" onClick={() => handleSort('album')}>
-                                        Album {sortBy === 'album' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
-                                    </Th>
-                                    <Th cursor="pointer" onClick={() => handleSort('duration')}>
-                                        Duration {sortBy === 'duration' && (sortOrder === 'asc' ? <FiChevronUp /> : <FiChevronDown />)}
+                                    <Th>Album</Th>
+                                    <Th>Duration</Th>
+                                    <Th cursor="pointer" onClick={() => handleSort('added_at')}>
+                                        Added {sortKey === 'added_at' && <FiChevronDown />}
                                     </Th>
                                     <Th></Th>
                                 </Tr>
@@ -262,7 +248,7 @@ const PlaylistDetails = () => {
                                         <SortableSongRow
                                             key={song.id}
                                             song={song}
-                                            index={playlist.songs.indexOf(song)}
+                                            index={index}
                                             token={token}
                                             handlePlaySong={handlePlaySong}
                                             handleDeleteSong={handleDeleteSong}

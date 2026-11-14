@@ -45,6 +45,9 @@ const SortableSongRow = ({ song, index, token, handlePlaySong, handleDeleteSong 
             <Td fontFamily="monospace">
                 {Math.floor(song.duration / 60)}:{(song.duration % 60).toString().padStart(2, '0')}
             </Td>
+            <Td fontSize="sm" color="gray.500">
+                {song.added_at ? new Date(song.added_at).toLocaleDateString() : '-'}
+            </Td>
             <Td>
                 <HStack spacing={1}>
                     <IconButton

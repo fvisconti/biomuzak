@@ -76,6 +76,7 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 				// Playlist songs routes
 				r.Post("/songs", playlistHandler.AddSongToPlaylistHandler)
 				r.Put("/reorder", playlistHandler.ReorderPlaylistSongsHandler)
+				r.Put("/order", playlistHandler.ReorderPlaylistOrderHandler)
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
 

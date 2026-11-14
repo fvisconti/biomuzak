@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
@@ -109,7 +110,12 @@ func (h *PlaylistHandler) GetPlaylistHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	songs, err := db.GetPlaylistSongs(h.DB, playlistID)
+	sortBy := r.URL.Query().Get("sort_by")
+	if sortBy == "" {
+		// No explicit override: the playlist's persisted sort key decides.
+		sortBy = playlist.SortKey
+	}
+	songs, err := db.GetPlaylistSongs(h.DB, playlistID, sortBy)
 	if err != nil {
 		http.Error(w, "Failed to get playlist songs", http.StatusInternalServerError)
 		return
@@ -121,6 +127,7 @@ func (h *PlaylistHandler) GetPlaylistHandler(w http.ResponseWriter, r *http.Requ
 		Name:      playlist.Name,
 		CreatedAt: playlist.CreatedAt,
 		UpdatedAt: playlist.UpdatedAt,
+		SortKey:   playlist.SortKey,
 		Songs:     songs,
 	}
 
@@ -129,11 +136,13 @@ func (h *PlaylistHandler) GetPlaylistHandler(w http.ResponseWriter, r *http.Requ
 }
 
 // UpdatePlaylistRequest defines the structure for the update playlist request.
+// Both fields are optional; at least one must be set.
 type UpdatePlaylistRequest struct {
-	Name string `json:"name"`
+	Name    string `json:"name"`
+	SortKey string `json:"sort_key"`
 }
 
-// UpdatePlaylistHandler handles updating a playlist's details (e.g., name).
+// UpdatePlaylistHandler handles updating a playlist's name and/or sort key.
 func (h *PlaylistHandler) UpdatePlaylistHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
 	if !ok {
@@ -154,14 +163,25 @@ func (h *PlaylistHandler) UpdatePlaylistHandler(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if req.Name == "" {
-		http.Error(w, "Playlist name cannot be empty", http.StatusBadRequest)
+	if req.Name == "" && req.SortKey == "" {
+		http.Error(w, "Nothing to update: provide a name and/or sort_key", http.StatusBadRequest)
 		return
 	}
 
-	err = db.UpdatePlaylistName(h.DB, userID, playlistID, req.Name)
+	nameField := sql.NullString{}
+	if req.Name != "" {
+		nameField = sql.NullString{String: req.Name, Valid: true}
+	}
+	sortField := sql.NullString{}
+	if req.SortKey != "" {
+		sortField = sql.NullString{String: req.SortKey, Valid: true}
+	}
+
+	err = db.UpdatePlaylistFields(h.DB, userID, playlistID, nameField, sortField)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if db.IsInvalidPlaylistSortKey(err) {
+			http.Error(w, "Invalid sort key (allowed: added_at, title, artist, position)", http.StatusBadRequest)
+		} else if err == sql.ErrNoRows {
 			http.Error(w, "Playlist not found or you don't have permission to update it", http.StatusNotFound)
 		} else {
 			http.Error(w, "Failed to update playlist", http.StatusInternalServerError)
@@ -345,6 +365,63 @@ func (h *PlaylistHandler) ReorderPlaylistSongsHandler(w http.ResponseWriter, r *
 	json.NewEncoder(w).Encode(map[string]string{"message": "Playlist reordered successfully"})
 }
 
+// ReorderPlaylistOrderRequest carries the full song order of a playlist.
+type ReorderPlaylistOrderRequest struct {
+	SongIDs []int `json:"song_ids"`
+}
+
+// ReorderPlaylistOrderHandler persists a complete song order for a playlist.
+// Unlike the single-song reorder endpoint, the provided list must contain
+// exactly the playlist's songs, so the display order and stored positions
+// always agree (used by the GUI after drag-reorder from a sorted view).
+func (h *PlaylistHandler) ReorderPlaylistOrderHandler(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, "Failed to get user ID from context", http.StatusInternalServerError)
+		return
+	}
+
+	playlistIDStr := chi.URLParam(r, "playlistID")
+	playlistID, err := strconv.Atoi(playlistIDStr)
+	if err != nil {
+		http.Error(w, "Invalid playlist ID", http.StatusBadRequest)
+		return
+	}
+
+	var req ReorderPlaylistOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.SongIDs) == 0 {
+		http.Error(w, "song_ids is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify ownership first
+	if _, err := db.GetPlaylistByID(h.DB, userID, playlistID); err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Playlist not found", http.StatusNotFound)
+		} else {
+			http.Error(w, "Database error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if err := db.ReorderPlaylistSongs(h.DB, playlistID, req.SongIDs); err != nil {
+		if errors.Is(err, db.ErrPlaylistOrderMismatch) {
+			http.Error(w, "Order does not match the playlist's songs", http.StatusBadRequest)
+		} else {
+			log.Printf("Failed to reorder playlist: %v", err)
+			http.Error(w, "Failed to reorder playlist", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"message": "Playlist order saved"})
+}
+
 // DownloadPlaylistHandler zips and serves the songs in a playlist
 func (h *PlaylistHandler) DownloadPlaylistHandler(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.GetUserIDFromContext(r.Context())
@@ -366,7 +443,7 @@ func (h *PlaylistHandler) DownloadPlaylistHandler(w http.ResponseWriter, r *http
 		return
 	}
 
-	songs, err := db.GetPlaylistSongs(h.DB, playlistID)
+	songs, err := db.GetPlaylistSongs(h.DB, playlistID, "")
 	if err != nil {
 		http.Error(w, "Failed to get playlist songs", http.StatusInternalServerError)
 		return

@@ -186,7 +186,7 @@ func TestAddToPlaylist_SetsGenreOnNewPlaylist(t *testing.T) {
 
 	// GetOrCreatePlaylist: not found yet.
 	mock.ExpectQuery(regexp.QuoteMeta(
-		"SELECT id, user_id, name, created_at, updated_at FROM playlists WHERE user_id = $1 AND name = $2")).
+		"SELECT id, user_id, name, created_at, updated_at, sort_key FROM playlists WHERE user_id = $1 AND name = $2")).
 		WithArgs(1, "Deep House Mix").
 		WillReturnError(sql.ErrNoRows)
 
@@ -194,8 +194,8 @@ func TestAddToPlaylist_SetsGenreOnNewPlaylist(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(
 		"INSERT INTO playlists (user_id, name) VALUES ($1, $2)")).
 		WithArgs(1, "Deep House Mix").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "name", "created_at", "updated_at"}).
-			AddRow(9, 1, "Deep House Mix", now, now))
+		WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "name", "created_at", "updated_at", "sort_key"}).
+			AddRow(9, 1, "Deep House Mix", now, now, "added_at"))
 
 	// Name → genre catalogue match.
 	mock.ExpectQuery(trigramFilterPattern).
@@ -219,7 +219,7 @@ func TestAddToPlaylist_SetsGenreOnNewPlaylist(t *testing.T) {
 		WithArgs(9).
 		WillReturnRows(sqlmock.NewRows([]string{"next"}).AddRow(1))
 	mock.ExpectExec(regexp.QuoteMeta(
-		"INSERT INTO playlist_songs (playlist_id, song_id, position) VALUES ($1, $2, $3)")).
+		"INSERT INTO playlist_songs (playlist_id, song_id, position, added_at) VALUES ($1, $2, $3, NOW())")).
 		WithArgs(9, 42, 1).
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()

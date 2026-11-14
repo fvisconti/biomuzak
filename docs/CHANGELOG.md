@@ -70,6 +70,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JSON redaction (`pkg/models/models_test.go`).
 
 ### Changed
+- **Playlists sort server-side, newest first by default** (E6): playlist tracks
+  now default to most-recently-added first. The Title, Artist, and Added
+  column headers sort server-side and the choice persists per playlist
+  (`playlists.sort_key`, `PUT /api/playlists/{id}` with `sort_key`); plain
+  `GET /api/playlists/{id}` now honours the persisted key, `?sort_by=` remains
+  an explicit override. Drag-reordering a playlist persists the whole
+  on-screen order via `PUT /api/playlists/{id}/order` and switches it to
+  position order. Migration `0009` adds `playlist_songs.added_at` and
+  `playlists.sort_key`.
 - **Migration renumbering repair**: `db.MigrateAll` rewrites legacy
   `schema_migrations` rows whose filenames were renumbered when
   `0002_add_playlist_genre` was inserted (old `0002`-`0004` → `0003`-`0005`),

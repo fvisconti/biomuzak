@@ -184,7 +184,8 @@ Playlists help you organize your favorite music.
 ### Managing Playlists
 
 - **Rename**: Click the playlist name to edit
-- **Reorder songs**: Drag and drop songs in the playlist
+- **Sort**: Click the **Title**, **Artist**, or **Added** column header to sort; the choice is saved with the playlist (new songs appear most-recent first by default)
+- **Reorder songs**: Drag and drop songs in the playlist — a manual order switches the playlist to that arrangement and keeps it
 - **Remove songs**: Click the **X** next to a song
 - **Delete playlist**: Click **Delete Playlist** (songs remain in your library)
 
