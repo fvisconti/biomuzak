@@ -2,27 +2,31 @@ package subsonic
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
 
 	"go-postgres-example/pkg/auth"
+	"go-postgres-example/pkg/config"
 )
 
 type contextKey string
 
 const userIDKey contextKey = "userID"
 
-// AuthMiddleware is a middleware that handles Subsonic authentication
-func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
+// AuthMiddleware is a middleware that handles Subsonic authentication.
+// It supports password auth (p) and token auth (t): the token is derived
+// server-side from the username under the JWT secret (see token.go), so it
+// can be verified without knowing the plaintext password.
+func AuthMiddleware(db *sql.DB, cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			params := r.URL.Query()
 			username := params.Get("u")
 			password := params.Get("p")
 			token := params.Get("t")
-			salt := params.Get("s")
 
 			if username == "" {
 				respondWithXML(w, &Response{
@@ -53,20 +57,21 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			if token != "" && salt != "" {
-				// Token-based authentication (Subsonic spec: t = md5(plaintext_password + salt)).
-				// We store passwords as one-way bcrypt hashes, so we cannot recompute
-				// md5(plaintext + salt) server-side. Rather than fall back to an insecure
-				// check, we fail closed: token auth is not supported by this backend.
-				// Clients should authenticate using the password parameter (p) instead.
-				respondWithXML(w, &Response{
-					Status: "failed",
-					Error: &Error{
-						Code:    40,
-						Message: "Token authentication is not supported; use the password parameter",
-					},
-				})
-				return
+			if token != "" {
+				// Token-based authentication (Subsonic spec: t). The token is
+				// derived from the username under the JWT secret, so bcrypt is
+				// not needed. Constant-time compare to avoid timing oracles.
+				expected := DeriveSubsonicToken(cfg.JWTSecret, username)
+				if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
+					respondWithXML(w, &Response{
+						Status: "failed",
+						Error: &Error{
+							Code:    40,
+							Message: "Wrong username or token",
+						},
+					})
+					return
+				}
 			} else if password != "" {
 				// Password-based authentication.
 				if strings.HasPrefix(password, "enc:") {

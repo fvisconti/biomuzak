@@ -77,9 +77,17 @@ docker compose up          # full stack (postgres, backend, frontend, audio-proc
 ## Review gate — the life of a change
 
 A task is **not done** until the diff has been reviewed and every finding is fixed or
-dismissed with a one-line reason. The three reviews are **advisory** — run them when
-you want; they record a marker as evidence but do not block a commit (a WIP commit with
-reviews pending is intentional and allowed). CI is the floor.
+dismissed with a one-line reason. The three reviews are **advisory** — they record a
+marker as evidence but do not block a commit (a WIP commit with reviews pending is
+intentional and allowed). CI is the floor.
+
+**Reviews are invoked, never automatic.** No agent (Copilot, pi, or a
+`run_agent` subagent) may start any review on its own initiative — not as part
+of "finishing the task", not from a plan/todo item, not before committing.
+A review starts only from an explicit human request (a named skill like
+`/pre-pr-review` or an instruction to review). The default end-of-task behaviour
+is: step 1 green + changelog bullet → stop and report; wait for the human to
+invoke reviews.
 
 1. `go test -race ./...` and `go vet ./...` green.
 2. `/pre-pr-review` — fresh-context Code Reviewer on the diff; **human** dispositions

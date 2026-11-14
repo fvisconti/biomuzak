@@ -63,8 +63,9 @@ func (h *Handler) GetIndexes(w http.ResponseWriter, r *http.Request) {
 		}
 		firstLetter := strings.ToUpper(string(artist.Name[0]))
 		indexMap[firstLetter] = append(indexMap[firstLetter], Artist{
-			ID:   strconv.Itoa(artist.ID),
-			Name: artist.Name,
+			ID:         makeArtistID(artist.Name),
+			Name:       artist.Name,
+			AlbumCount: artist.AlbumCount,
 		})
 	}
 
@@ -127,19 +128,16 @@ func (h *Handler) Search3(w http.ResponseWriter, r *http.Request) {
 
 	for _, album := range albums {
 		response.SearchResult3.Albums = append(response.SearchResult3.Albums, Album{
-			ID:     strconv.Itoa(album.ID),
-			Name:   album.Name,
-			Artist: album.Artist,
+			ID:       makeAlbumID(album.Artist, album.Name),
+			Name:     album.Name,
+			Artist:   album.Artist,
+			ArtistID: makeArtistID(album.Artist),
 		})
 	}
 
 	for _, song := range songs {
-		response.SearchResult3.Songs = append(response.SearchResult3.Songs, Song{
-			ID:     strconv.Itoa(song.ID),
-			Title:  song.Title,
-			Artist: song.Artist,
-			Album:  song.Album,
-		})
+		// db.Search returns full song rows; enrich into the Subsonic model.
+		response.SearchResult3.Songs = append(response.SearchResult3.Songs, toSong(song, r))
 	}
 
 	respondWithXML(w, response)

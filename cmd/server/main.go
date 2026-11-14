@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,8 +29,19 @@ func main() {
 
 	// Refuse to start with the insecure default JWT secret: anyone could forge
 	// valid tokens and impersonate any user.
-	if cfg.JWTSecret == "" || cfg.JWTSecret == "default-secret" {
-		log.Fatal("JWT_SECRET must be set to a strong, unique value (the default is not allowed)")
+	// Reject every known placeholder so a forgotten .env cannot silently
+	// weaken the whole auth scheme (JWT signing and the derived Subsonic
+	// tokens both hang on this secret).
+	for _, forbidden := range []string{
+		"", "default-secret", "default-secret-change-in-production",
+		"your-super-secret-jwt-key-change-in-production", "secret", "changeme",
+	} {
+		if strings.EqualFold(strings.TrimSpace(cfg.JWTSecret), forbidden) {
+			log.Fatal("JWT_SECRET must be set to a strong, unique value (known defaults are not allowed)")
+		}
+	}
+	if len(cfg.JWTSecret) < 16 {
+		log.Fatal("JWT_SECRET must be at least 16 characters")
 	}
 
 	// Object-storage credentials are secrets: there is no meaningful default

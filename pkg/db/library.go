@@ -193,8 +193,15 @@ func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*mod
 		albums = append(albums, &album)
 	}
 
-	// Search songs
-	songRows, err := db.Query("SELECT id, title, artist, album FROM songs WHERE title ILIKE $1 ORDER BY title LIMIT 100", pattern)
+	// Search songs (full fields so the Subsonic Song model can be enriched).
+	songRows, err := db.Query(
+		`SELECT s.id, s.title, s.artist, s.album, s.year,
+		        COALESCE(g.name, ''), s.duration, s.bitrate, s.file_size, s.last_modified
+		 FROM songs s
+		 LEFT JOIN genres g ON s.genre_id = g.id
+		 WHERE s.title ILIKE $1
+		 ORDER BY s.title
+		 LIMIT 100`, pattern)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -202,11 +209,11 @@ func Search(db *sql.DB, query string) ([]*models.Artist, []*models.Album, []*mod
 
 	var songs []*models.Song
 	for songRows.Next() {
-		var song models.Song
-		if err := songRows.Scan(&song.ID, &song.Title, &song.Artist, &song.Album); err != nil {
+		song, err := scanFullSong(songRows)
+		if err != nil {
 			return nil, nil, nil, err
 		}
-		songs = append(songs, &song)
+		songs = append(songs, song)
 	}
 
 	return artists, albums, songs, nil

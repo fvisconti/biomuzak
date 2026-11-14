@@ -295,10 +295,18 @@ with the global model).
 - **C (playlists)**: `getPlaylists`, `getPlaylist`, `createPlaylist`,
   `updatePlaylist`, `deletePlaylist`.
 
-**Verification**: connect a real Subsonic client (e.g. a mobile app) with token
-auth; browse albums/artists, stream, see similar songs, list/create playlists.
+**Design decisions**:
+- **Token auth**: per-user token derived as `HMAC-SHA256(JWT_SECRET,
+  "biomuzak-subsonic-token:"+username)` — no new table/column, revocable by
+  rotating `JWT_SECRET`; exposed via `GET /api/subsonic/token` (JWT-protected).
+- **Artist/album IDs**: the schema has no artists/albums tables, so IDs are
+  synthesized, reversible strings (`a.<base64>`, `al.<base64>`).
 
-**Status**: ⬜
+**Verification**: unit tests cover token auth (valid/wrong), all new endpoints,
+and per-user playlist scoping. Connecting a real Subsonic mobile client is
+deferred to the final integration stage (no Docker on the dev host).
+
+**Status**: ✅
 
 ---
 

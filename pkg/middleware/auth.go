@@ -55,3 +55,11 @@ func GetUserIDFromContext(ctx context.Context) (int, bool) {
 	userID, ok := ctx.Value(userContextKey).(int)
 	return userID, ok
 }
+
+// WithUserIDForTest injects a user ID into a context. TEST SUPPORT ONLY: it
+// exists so unit tests in other packages can exercise JWT-protected handlers
+// without a real JWT. Never call it from a production request path — it
+// forges the authenticated principal.
+func WithUserIDForTest(ctx context.Context, userID int) context.Context {
+	return context.WithValue(ctx, userContextKey, userID)
+}

@@ -47,6 +47,7 @@ type Album struct {
 
 // Artist represents an artist in the database
 type Artist struct {
-	ID   int    `json:"id"`
-	Name string `json:"name"`
+	ID         int    `json:"id"`
+	Name       string `json:"name"`
+	AlbumCount int    `json:"albumCount,omitempty"`
 }

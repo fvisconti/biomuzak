@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Subsonic API completeness (E7)**: any third-party Subsonic client can now
+  connect and use the library — token auth (`t=`) via a per-user derived token
+  (`GET /api/subsonic/token`, revocable by rotating `JWT_SECRET`), enriched
+  song metadata (`duration`, `bitrate`, `size`, `streamUrl`, `year`, `genre`),
+  `getSimilarSongs` (E2 vector search), browse endpoints (`getAlbums`,
+  `getAlbum`, `getArtists`, `getArtist`, `getChildren`, `getRandomSongs`,
+  `getArtwork`), and playlist endpoints (`getPlaylists`, `getPlaylist`,
+  `createPlaylist`, `updatePlaylist`, `deletePlaylist`) — all playlist
+  endpoints stay scoped to the authenticated Subsonic user.
+
+### Fixed
+- The server now refuses to start when `JWT_SECRET` is short (<16 chars) or
+  one of the known placeholders (the compose fallback default is gone, so an
+  unset secret fails `docker compose up`). The derived Subsonic tokens and
+  the JWTs both depend on this secret, so a weak value would let anyone
+  compute valid credentials for every user.
+- `getChildren?id=1` (the Subsonic root folder) now correctly lists all
+  albums instead of being swallowed by the song-id branch; missing cover art
+  reports Subsonic error 70.
+
 ### Changed
 - **Object tags for genre/artist** (E4, single-bucket design): uploaded and
   Tidal-imported audio objects are tagged in MinIO with `genre` and `artist`

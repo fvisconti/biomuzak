@@ -52,6 +52,9 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		r.Get("/api/auth/me", authHandler.Me)
 		r.Get("/api/search", libraryHandler.SearchHandler)
 
+		// Subsonic API token for the authenticated user (third-party clients).
+		r.Get("/api/subsonic/token", subsonic.NewTokenHandler(authHandler.DB, authHandler.Cfg).GetSubsonicTokenHandler)
+
 		r.Post("/api/upload", uploadHandler.Upload)
 
 		// Library and Song routes

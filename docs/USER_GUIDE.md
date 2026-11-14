@@ -292,7 +292,13 @@ biomuzak is compatible with Subsonic mobile clients, letting you stream your mus
      - Replace `your-server-ip` with your server's IP address
      - If using a domain: `https://music.yourdomain.com/rest`
    - Username: Your biomuzak username
-   - Password: Your biomuzak password
+   - Password: Your biomuzak password — or use **token auth** (supported by
+     most apps): get your token by calling `GET /api/subsonic/token` with
+     your biomuzak JWT. Tokens are derived from your username and the
+     server's `JWT_SECRET`, so rotating the secret revokes them.
+   - **Self-hosters**: the server refuses to start with a short or well-known
+     `JWT_SECRET` — set a random 32+ character value in your `.env`
+     (e.g. `openssl rand -hex 32`).
    - Server Name: "biomuzak" (or any name you prefer)
 
 3. **Test the connection**:
