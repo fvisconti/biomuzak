@@ -1,11 +1,28 @@
-import pytest
-import numpy as np
+import sys
+import types
 from unittest.mock import Mock, patch, AsyncMock
-from fastapi.testclient import TestClient
+
+import numpy as np
+import pytest
 from fastapi import UploadFile
+from fastapi.testclient import TestClient
 import io
 
-from main import app, normalize, process_audio
+# The audio-processor is normally run inside its Docker image, where Essentia
+# is available. The local test environment (no Docker) does not have Essentia,
+# so we stub out the module before importing the application. This test only
+# verifies that normalize() behaves correctly and does not rely on Essentia
+# at runtime.
+essentia_mod = types.ModuleType("essentia")
+essentia_mod.__path__ = []  # mark as a package so `import essentia.standard` resolves
+sys.modules["essentia"] = essentia_mod
+standard_mod = types.ModuleType("essentia.standard")
+# Attributes patched in the tests below resolve through this module.
+standard_mod.MonoLoader = object
+standard_mod.Extractor = object
+sys.modules["essentia.standard"] = standard_mod
+
+from audio_processor.main import app, normalize, process_audio
 
 client = TestClient(app)
 
@@ -47,8 +64,8 @@ class TestProcessAudioEndpoint:
         assert response.status_code == 200
         assert response.json() == {"message": "Audio processing service is running"}
         
-    @patch('main.es.MonoLoader')
-    @patch('main.es.Extractor')
+    @patch('audio_processor.main.es.MonoLoader')
+    @patch('audio_processor.main.es.Extractor')
     def test_process_audio_success(self, mock_extractor_class, mock_loader_class):
         """Test successful audio processing"""
         # Mock the audio loader
@@ -96,7 +113,7 @@ class TestProcessAudioEndpoint:
         
         assert response.status_code == 422  # Unprocessable Entity
         
-    @patch('main.es.MonoLoader')
+    @patch('audio_processor.main.es.MonoLoader')
     def test_process_audio_processing_error(self, mock_loader_class):
         """Test handling of processing errors"""
         # Mock the loader to raise an exception
@@ -114,8 +131,8 @@ class TestProcessAudioEndpoint:
 
 
 class TestEmbeddingDimensions:
-    @patch('main.es.MonoLoader')
-    @patch('main.es.Extractor')
+    @patch('audio_processor.main.es.MonoLoader')
+    @patch('audio_processor.main.es.Extractor')
     def test_embedding_dimensions(self, mock_extractor_class, mock_loader_class):
         """Test that the embedding has exactly 38 dimensions"""
         # Mock the audio loader
