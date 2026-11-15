@@ -44,7 +44,7 @@ can be revisited.
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
 | D1 | tiddl | Keep the working hand-rolled download; add link-paste on top. `tiddl` adoption is a separate optional epic (E8). | "Keep almost everything"; the decrypt path works. |
-| D2 | Storage layout | One **bucket per genre** (dynamic selection) + **MinIO object tags** for artist/label. | Matches the explicit "bucket per genre, label for artist/label" wording. Accepts a one-time re-key migration. |
+| D2 | Storage layout | ~~One bucket per genre~~ **Overridden in E4 (2026-11-14, user)**: single flat bucket + **MinIO object tags** for genre/artist. No re-key migration. | Simpler: dedup keys stay stable, no migration; tags are informational and cheap to refresh on genre change. |
 | D3 | "Most recent" | = most recently **added to the playlist** (new `added_at` column). | Most intuitive for a playlist. |
 | D4 | Subsonic scope | **Full** target (browse + playlists + token auth), delivered in 3 phases. | "Easy to connect any third-party client." |
 | D5 | Global visibility | All tracks visible to all; **keep `user_songs` for ratings / "in my library" only**. | Preserves the existing ratings feature. |
@@ -174,9 +174,9 @@ trigram cases in `pkg/db/library_test.go`, `pkg/tidal/import_test.go`,
 
 ---
 
-## E4 — MinIO per-genre buckets + object tagging
+## E4 — MinIO object tagging (single bucket)
 
-**Goal**: per-genre storage organisation; object tags for artist/genre.
+**Goal**: object tags for genre/artist, keeping the single flat bucket.
 
 **Design decision (2026-11-14, user)**: single flat bucket, **genre as a
 MinIO object tag** — no per-genre buckets, no re-key migration. The hash key
@@ -344,6 +344,6 @@ genre). Higher risk (new dependency + rewrite of a working path).
   `md5(password+salt)`) — a real blocker for most third-party clients; E7 Phase A
   fixes it.
 - **Tidal import sets no genre** and storage keys are decided *before* genre is
-  known — so E4 (per-genre buckets) must come after E3 (genre resolution).
+  known — so E4 (object tagging) must come after E3 (genre resolution).
 - **`user_songs`** is already a many-to-many "library" view, not true ownership — so
   E1 is mostly dropping the membership gate, not a schema rewrite.
