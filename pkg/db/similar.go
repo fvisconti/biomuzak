@@ -10,11 +10,12 @@ import (
 )
 
 // EmbeddingDim is the fixed width of every song embedding in this system:
-// 38 dimensions (13 MFCC mean + 13 MFCC cov + 6 spectral mean + 6 spectral
-// cov), matching the vector(38) column in song_embeddings. Enforcing it here
-// — before any pgvector string is built — keeps a malformed vector from
-// reaching SQL (see vchord.instructions.md).
-const EmbeddingDim = 38
+// 768 dimensions, one MAEST v2 token embedding (discogs-maest-10s-pw-2,
+// averaged over the track's 10s windows and L2-normalized), matching the
+// vector(768) column in song_embeddings. Enforcing it here — before any
+// pgvector string is built — keeps a malformed vector from reaching SQL
+// (see vchord.instructions.md).
+const EmbeddingDim = 768
 
 // checkEmbeddingDimension returns an error unless v has exactly EmbeddingDim
 // elements. Callers must use it before building any query text.

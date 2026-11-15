@@ -24,6 +24,8 @@ services:
       context: ./audio-processor
       dockerfile: Dockerfile
     container_name: biomuzak_audio_processor
+    environment:
+      - MAEST_MODEL_PATH=${MAEST_MODEL_PATH:-/models/discogs-maest-10s-pw-2.pb}
     ports:
       - "${AUDIO_PROCESSOR_PORT:-8000}:8000"
     healthcheck:

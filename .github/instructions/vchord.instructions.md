@@ -1,5 +1,5 @@
 ---
-description: 'VectorChord engine rules for this repository: vchordrq dense index on 38-dim cosine song embeddings'
+description: 'VectorChord engine rules for this repository: vchordrq dense index on 768-dim cosine song embeddings'
 applyTo: '**/*.sql,**/*.go,db/migrations/**,docker-compose*.yml,Dockerfile'
 ---
 
@@ -11,7 +11,7 @@ index option, which GUC, and the ceiling that silently truncates results when it
 ignored. `sql.instructions.md` owns the surrounding policy (per-user scoping,
 parameterization, one-helper rule); this file owns the engine.
 
-This repository uses **dense search only** — a `vchordrq` index over the 38-dim cosine
+This repository uses **dense search only** — a `vchordrq` index over the 768-dim cosine
 embeddings in `song_embeddings.embedding`. There is no sparse (BM25) search, no
 `pg_tokenizer`, and no RaBitQ quantization in this project.
 
@@ -88,9 +88,10 @@ When a decision here and the docs disagree, the docs win: update this file and
    `LIMIT` applies *after* the `WHERE`, `max_scan_tuples` *before*, so it is the only
    way to cap the work a selective predicate can cause. `-1` (default) means
    unbounded. Set it on the query that needs it.
-10. **The embedding width is 38.** A vector whose length is not 38 is rejected before
-    SQL is built (in `pkg/db/similar.go`); a search query and the stored rows must
-    share the width or the distance is meaningless.
+10. **The embedding width is 768** (MAEST v2 token embedding, L2-normalized).
+    A vector whose length is not 768 is rejected before SQL is built (in
+    `pkg/db/similar.go`); a search query and the stored rows must share the
+    width or the distance is meaningless.
 11. **Verify the version; do not trust the floating tag.** `pg18-latest` is a moving
     target and every option above is version-dependent. A production deployment pins a
     dated tag.

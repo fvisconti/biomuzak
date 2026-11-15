@@ -2,8 +2,8 @@
 
 A self-hosted music organizer, player, and streamer. Users upload audio files; the
 server extracts metadata, stores files in MinIO, and serves a REST API plus a
-Subsonic-compatible API for playback. A Python microservice generates 38-dim audio
-feature embeddings used for "similar songs."
+Subsonic-compatible API for playback. A Python microservice generates 768-dim MAEST
+audio embeddings (Essentia) used for "similar songs."
 
 ## Golden rules — red/green TDD (mandatory)
 
@@ -41,7 +41,7 @@ feature embeddings used for "similar songs."
 - **Backend**: Go 1.25 (`go.mod`), `chi` router, `pgx/v4` (Postgres), `golang-jwt`,
   `dhowden/tag`, `minio-go`. Module name is `go-postgres-example` (historical — keep it).
 - **Database**: PostgreSQL 18 (`tensorchord/vchord-suite:pg18-latest`) with `pgvector`
-  for the `vector(N)` type and `vchord` (`vchordrq`) for the dense index on 38-dim
+  for the `vector(N)` type and `vchord` (`vchordrq`) for the dense index on 768-dim
   song embeddings.
 - **Audio processor**: Python FastAPI + Essentia (`audio-processor/`).
 - **Frontend**: React + Vite (`frontend/`).
@@ -98,7 +98,7 @@ invoke reviews.
    marked "needs measurement", not accepted.
 5. Scoped reviews (run when the diff touches that area):
    - `/audio-processor-review` — Code Reviewer scoped to `audio-processor/`
-     against the 38-dim contract, normalization, and temp-file rules.
+     against the 768-dim MAEST contract, L2 normalization, and temp-file rules.
    - `/frontend-review` — Code Reviewer scoped to `frontend/` against the
      API-client, context-state, theming, and no-secrets rules.
 6. `/risk-tier` — classifier proposes Low/Medium/High; **human** confirms or raises it.

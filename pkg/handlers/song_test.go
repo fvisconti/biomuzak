@@ -17,9 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// embedding38 is the pgvector text form of a valid 38-dim embedding (the
+// embedding768 is the pgvector text form of a valid 768-dim embedding (the
 // repo-wide contract enforced by db.SaveSongEmbedding / db.FindSimilarSongs).
-var embedding38 = "[" + strings.TrimSuffix(strings.Repeat("0.1,", 38), ",") + "]"
+var embedding768 = "[" + strings.TrimSuffix(strings.Repeat("0.1,", 768), ",") + "]"
 
 // TestGetSimilarSongsHandler_UsesConfiguredLimit asserts the similar-songs
 // endpoint returns the number of tracks configured via SIMILAR_SONGS_LIMIT
@@ -34,11 +34,11 @@ func TestGetSimilarSongsHandler_UsesConfiguredLimit(t *testing.T) {
 	// 1. Embedding lookup.
 	mock.ExpectQuery(`SELECT embedding::text FROM song_embeddings WHERE song_id = \$1`).
 		WithArgs(7).
-		WillReturnRows(sqlmock.NewRows([]string{"embedding"}).AddRow(embedding38))
+		WillReturnRows(sqlmock.NewRows([]string{"embedding"}).AddRow(embedding768))
 
 	// 2. Similar songs: the LIMIT ($3) must be the configured value (3).
 	mock.ExpectQuery(`ORDER BY se.embedding <=> \$1`).
-		WithArgs(embedding38, 7, 3).
+		WithArgs(embedding768, 7, 3).
 		WillReturnRows(sqlmock.NewRows([]string{
 			"id", "fingerprint_hash", "file_path", "title", "artist", "album", "year",
 			"genre_id", "genre", "duration", "bitrate", "file_size", "last_modified", "similarity",

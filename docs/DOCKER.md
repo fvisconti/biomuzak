@@ -89,7 +89,7 @@ docker compose exec postgres pg_isready -U musicuser
 **Port**: 8000
 **Dependencies**: Essentia, FastAPI, NumPy
 
-Processes audio files and generates 38-dimensional feature embeddings.
+Processes audio files and generates 768-dimensional MAEST embeddings (Essentia `discogs-maest-10s-pw-2`, pre-downloaded at build time, location overridable via `MAEST_MODEL_PATH`).
 
 **Test Endpoint**:
 ```bash

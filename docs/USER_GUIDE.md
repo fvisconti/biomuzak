@@ -199,8 +199,9 @@ biomuzak uses AI to find songs similar to ones you love.
 
 When you upload a song, biomuzak:
 1. Analyzes the audio characteristics
-2. Extracts 38 audio features (tempo, timbre, rhythm, etc.)
-3. Stores these as a "fingerprint"
+2. Computes a 768-dim audio fingerprint (MAEST, Essentia) — a learned
+   representation of the track's musical character
+3. Stores this fingerprint
 4. Compares fingerprints to find similar songs
 
 ### Finding Similar Songs

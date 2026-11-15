@@ -16,7 +16,7 @@ query text.
   boot from code.
 - All SQL is hand-written and executed through `pgx/v4` (via `database/sql`). There is
   no ORM.
-- `songs` is the core row; `song_embeddings` holds the 38-dim `vector(38)` per song.
+- `songs` is the core row; `song_embeddings` holds the 768-dim `vector(768)` (MAEST) per song.
   Similarity search operates on `song_embeddings`.
 - **Scoping is per-user**: library rows carry the owning user; a query returns only the
   requesting user's data. There is no multi-tenant RLS — the user predicate is the
@@ -40,7 +40,7 @@ query text.
    `Index Cond`; the `ORDER BY ... LIMIT k` stays either way and an untrusted radius is
    clamped in Go first (`.github/instructions/vchord.instructions.md`). Dense search
    goes through the single helper in `pkg/db/similar.go`, which also rejects any vector
-   whose length is not 38 before the SQL is built.
+   whose length is not 768 before the SQL is built.
 5. **Idempotent upserts** — `ON CONFLICT ... DO UPDATE` plus `COALESCE(NULLIF($n, ''),
    col)` so empty values never overwrite rich data.
 6. **NULL is distinct in a unique index** — a composite `UNIQUE` over a nullable column
@@ -54,7 +54,7 @@ query text.
 9. **Vectors cross the boundary as one helper** — `[]float64` is formatted to
    pgvector's text literal in exactly one place (`pkg/db/similar.go`), never per query.
    That helper is also the single place the width is checked: a search query and the
-   stored rows must share the 38-dim width or the distance is meaningless.
+   stored rows must share the 768-dim width or the distance is meaningless.
 10. **Explain what you index** — every new index is added together with the query it
     serves, in the same commit; an index without a consumer is a cost with no benefit.
     Engine options, GUCs and ceiling behaviour:

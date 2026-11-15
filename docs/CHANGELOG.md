@@ -8,6 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **BREAKING** — **MAEST embeddings replace the hand-rolled 38-dim features**
+  ("similar songs" quality upgrade, done while the local database was empty
+  so no re-embed was needed): the audio-processor now runs Essentia's MAEST
+  v2
+  model (`discogs-maest-10s-pw-2`, 3.3M-track training set) and returns a
+  single 768-dim, L2-normalized per-track embedding (mean of the model's
+  per-10s-window token vectors). The model is loudness-robust by design and
+  does its own feature extraction, so the old MusicExtractor profile /
+  EQ-loudness preprocessing is gone. The `.pb` graph is pre-downloaded in
+  the Docker build, loaded once per process, and its location is overridable
+  via `MAEST_MODEL_PATH` (`.env` → compose). Inference now runs in the
+  threadpool (sync handler) instead of blocking the event loop. The model
+  download is pinned by sha256 in the Docker build, and 500s no longer
+  echo internal error text to the caller (logged server-side).
+- Migration `0010_maest_embedding_768.sql`: `song_embeddings` is now
+  `VECTOR(768)` with a rebuilt `vchordrq` cosine index.
+
+### Changed
+- `EmbeddingDim` is 768 (was 38) — the Go guard rejects any other width
+  before SQL. Existing deployments with 38-dim rows must re-run the
+  embedding backfill after the migration.
+
+### Removed
+- The 38-dim MFCC/spectral-contrast pipeline (`es.Extractor` + min-max
+  `normalize`) from the audio-processor — superseded by MAEST, which does
+  its own feature extraction and is loudness-robust by design.
+
+### Fixed
 - **Subsonic API completeness (E7)**: any third-party Subsonic client can now
   connect and use the library — token auth (`t=`) via a per-user derived token
   (`GET /api/subsonic/token`, revocable by rotating `JWT_SECRET`), enriched

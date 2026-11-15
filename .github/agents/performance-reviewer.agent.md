@@ -61,7 +61,7 @@ Read `REVIEW.md` (repo root) first. Your lens is the performance subset of it:
 - A query inside a loop over rows — the N+1 shape. In this repo it usually looks
   like a `pkg/db` method called per song or per album in a handler.
 - Fetching full rows to read one column, then discarding the rest.
-- `SELECT *` on a table with vector columns: the `vector(38)` payload is the row.
+- `SELECT *` on a table with vector columns: the `vector(768)` payload is the row.
 - A k-NN search whose `LIMIT` is larger than what the caller consumes.
 - A count computed by fetching and counting in Go.
 - **Missing index ⇒ the same SQL in a `WHERE`/`ORDER BY` shape the index cannot

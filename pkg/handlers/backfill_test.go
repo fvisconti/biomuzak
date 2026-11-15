@@ -181,7 +181,7 @@ func TestBackfill_JobAccounting(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"file_path"}).AddRow("songs/1.mp3"))
 	// Song 1's valid embedding is saved.
 	mock.ExpectExec(`INSERT INTO song_embeddings`).
-		WithArgs(1, "["+strings.TrimSuffix(strings.Repeat("0.5,", 38), ",")+"]").
+		WithArgs(1, "["+strings.TrimSuffix(strings.Repeat("0.5,", 768), ",")+"]").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery(`SELECT file_path FROM songs WHERE id = \$1`).
 		WithArgs(2).
@@ -200,7 +200,7 @@ func TestBackfill_JobAccounting(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"embedding": [`+strings.TrimSuffix(strings.Repeat("0.5,", 38), ",")+`]}`)
+		fmt.Fprint(w, `{"embedding": [`+strings.TrimSuffix(strings.Repeat("0.5,", 768), ",")+`]}`)
 	}))
 	defer server.Close()
 

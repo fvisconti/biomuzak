@@ -19,9 +19,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// vectorText38 builds a 38-dim vector literal for sqlmock rows.
-func vectorText38() string {
-	parts := make([]string, 38)
+// vectorText768 builds a 768-dim vector literal for sqlmock rows.
+func vectorText768() string {
+	parts := make([]string, 768)
 	for i := range parts {
 		parts[i] = "0.1"
 	}
@@ -234,7 +234,7 @@ func TestGetSimilarSongs(t *testing.T) {
 
 	mock.ExpectQuery(`SELECT embedding::text FROM song_embeddings WHERE song_id = \$1`).
 		WithArgs(3).
-		WillReturnRows(sqlmock.NewRows([]string{"embedding"}).AddRow(vectorText38()))
+		WillReturnRows(sqlmock.NewRows([]string{"embedding"}).AddRow(vectorText768()))
 	mock.ExpectQuery(`ORDER BY se\.embedding <=> \$1`).
 		WillReturnRows(sqlmock.NewRows(
 			[]string{"id", "fingerprint_hash", "file_path", "title", "artist", "album", "year", "genre_id", "genre", "duration", "bitrate", "file_size", "last_modified", "similarity"}).

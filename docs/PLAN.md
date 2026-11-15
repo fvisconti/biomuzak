@@ -324,8 +324,11 @@ genre). Higher risk (new dependency + rewrite of a working path).
 
 ## Cross-cutting notes
 
-- **Embedding dim**: `0001` says `VECTOR(512)` but `0005` fixes it to 38 — already
-  handled; don't touch unless changing the 38-dim contract.
+- **Embedding dim**: `0001` says `VECTOR(512)`, `0005` fixed it to 38, and
+  `0010` (2026-11-15) moves it to **768** — MAEST v2 embeddings
+  (`discogs-maest-10s-pw-2`, L2-normalized). Done while the local DB was
+  empty, so no re-embed. Existing 38-dim deployments must backfill.
+  Don't touch the dim contract without a new migration + backfill.
 - **TDD**: every epic starts with a failing test (red/green). Offline tests via
   `go-sqlmock` / `httptest`; no live MinIO/Postgres in unit tests.
 - **Changelog**: each user-visible epic gets a bullet under `## [Unreleased]` in

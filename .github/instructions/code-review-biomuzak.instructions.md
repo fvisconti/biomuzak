@@ -44,9 +44,9 @@ Do not restate a sibling file's rules in a finding; cite it.
   a `user_id` predicate, transactions commit/rollback, cascade cleanup on delete.
 - [ ] **Vector search** — `vchord.instructions.md`: bounded k-NN only
   (`ORDER BY embedding <=> $1 LIMIT k`) through `pkg/db/similar.go`; no distance
-  comparison in `WHERE`; 38-dim vectors rejected before SQL is built; limits from
+  comparison in `WHERE`; 768-dim vectors rejected before SQL is built; limits from
   env vars, never hardcoded.
-- [ ] **Audio processor** — `audio-processor.instructions.md`: 38-dim contract
+- [ ] **Audio processor** — `audio-processor.instructions.md`: 768-dim MAEST contract
   (13+13+6+6), min-max normalization, `tempfile.mkstemp` + `finally` cleanup, no
   real audio in tests.
 - [ ] **Frontend** — `frontend.instructions.md`: API calls through
@@ -77,7 +77,7 @@ npm run lint && npm run build # in frontend/, when touched
 | `"… WHERE name LIKE '%" + name + "%'"` | `"… WHERE user_id = $1 AND name LIKE $2"` | 2 — parameterize |
 | empty `JWT_SECRET` ⇒ fallback to a default | fail fast: `errors.New("JWT_SECRET is required")` | 3 — no secret defaults |
 | `ORDER BY embedding <=> $1` (no limit) | `ORDER BY embedding <=> $1 LIMIT $2` | bounded k-NN |
-| embedding of any length passed to SQL | reject length ≠ 38 in `pkg/db/similar.go` first | 38-dim contract |
+| embedding of any length passed to SQL | reject length ≠ 768 in `pkg/db/similar.go` first | 768-dim MAEST contract |
 
 ## Contract rules
 

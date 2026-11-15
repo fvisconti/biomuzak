@@ -41,14 +41,14 @@ curl -X POST -F "file=@/path/to/your/song.mp3" http://localhost:8000/process-aud
 **Successful Response:**
 
 - **Status Code:** `200 OK`
-- **Body:** A JSON object containing a 38-dimensional feature embedding vector. The vector is normalized to a 0-1 range.
+- **Body:** A JSON object containing a 768-dimensional MAEST embedding vector (Essentia `discogs-maest-10s-pw-2`, mean of per-10s-window token embeddings, L2-normalized to unit norm).
 
 ```json
 {
   "embedding": [
     0.87,
     0.12,
-    // ... 36 more float values
+    // ... 766 more float values
   ]
 }
 ```

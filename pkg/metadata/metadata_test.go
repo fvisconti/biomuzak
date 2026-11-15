@@ -277,29 +277,29 @@ func TestGetEmbeddingsFromService_ErrorHandling(t *testing.T) {
 	}
 }
 
-// embedding38String builds the pgvector text form of a 38-dim vector filled
+// embedding768String builds the pgvector text form of a 768-dim vector filled
 // with val — the exact string db.SaveSongEmbedding sends as $2.
-func embedding38String(val float64) string {
+func embedding768String(val float64) string {
 	s := strconv.FormatFloat(val, 'f', -1, 64)
-	return "[" + strings.TrimSuffix(strings.Repeat(s+",", 38), ",") + "]"
+	return "[" + strings.TrimSuffix(strings.Repeat(s+",", 768), ",") + "]"
 }
 
 // TestGenerateEmbeddingForSong covers the cold-start backfill's per-song
 // pipeline: fetch file path, stream audio from storage, call the audio
 // processor, and persist the embedding.
 //
-// Objective: GenerateEmbeddingForSong succeeds and saves a 38-dim embedding,
+// Objective: GenerateEmbeddingForSong succeeds and saves a 768-dim embedding,
 // and surfaces errors without writing to the DB on any failure.
 //
 // Given-When-Then: Given a mocked DB/storage/audio-processor, When the song
 // pipeline runs, Then the INSERT executes only on a valid 38-dim response,
 // and errors (processor down, wrong width) fail before the save.
 //
-// Edge cases: a non-38-dim processor response is rejected by the db
+// Edge cases: a non-768-dim processor response is rejected by the db
 // dimension guard (no SQL); a nil DB/stream is never reached because
 // GetSongFilePath errors first.
 func TestGenerateEmbeddingForSong(t *testing.T) {
-	embeddingJSON := `[` + strings.TrimSuffix(strings.Repeat("0.5,", 38), ",") + `]`
+	embeddingJSON := `[` + strings.TrimSuffix(strings.Repeat("0.5,", 768), ",") + `]`
 	tests := []struct {
 		name         string
 		serverFunc   http.HandlerFunc
@@ -307,7 +307,7 @@ func TestGenerateEmbeddingForSong(t *testing.T) {
 		expectErrSub string
 	}{
 		{
-			name: "happy path saves 38-dim embedding",
+			name: "happy path saves 768-dim embedding",
 			serverFunc: func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				fmt.Fprint(w, `{"embedding": `+embeddingJSON+`}`)
@@ -347,7 +347,7 @@ func TestGenerateEmbeddingForSong(t *testing.T) {
 				WillReturnRows(sqlmock.NewRows([]string{"file_path"}).AddRow("songs/42.mp3"))
 			if tt.expectSave {
 				mock.ExpectExec(`INSERT INTO song_embeddings`).
-					WithArgs(42, embedding38String(0.5)).
+					WithArgs(42, embedding768String(0.5)).
 					WillReturnResult(sqlmock.NewResult(1, 1))
 			}
 

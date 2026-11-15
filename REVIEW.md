@@ -25,7 +25,7 @@ live in `.github/instructions/code-review-biomuzak.instructions.md`.
    edit an applied one; never DDL from application code.
 6. **Bounded vector search.** k-NN only (`ORDER BY embedding <=> $1 LIMIT k`)
    through `pkg/db/similar.go`; a distance comparison in `WHERE` is a defect.
-   Embedding width is 38.
+   Embedding width is 768 (MAEST v2).
 7. **No secrets in logs or responses.** `JWT_SECRET`, `MINIO_*`, `TIDAL_*` are
    never logged or returned to a client.
 8. **Explicit errors.** Every error is checked; handlers return sanitized

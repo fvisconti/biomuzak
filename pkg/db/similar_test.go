@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// EmbeddingDim is the repo-wide 38-dim contract (13+13+6+6, see
+// EmbeddingDim is the repo-wide 768-dim MAEST contract (see
 // vchord.instructions.md). Helpers below build valid and invalid vectors.
-func embedding38(val float64) []float64 {
+func embedding768(val float64) []float64 {
 	v := make([]float64, EmbeddingDim)
 	for i := range v {
 		v[i] = val
@@ -21,9 +21,9 @@ func embedding38(val float64) []float64 {
 	return v
 }
 
-// embedding38String is the pgvector text form of embedding38(val) — the exact
+// embedding768String is the pgvector text form of embedding768(val) — the exact
 // string vectorToString produces, so sqlmock WithArgs match it.
-func embedding38String(val float64) string {
+func embedding768String(val float64) string {
 	s := strconv.FormatFloat(val, 'f', -1, 64)
 	return "[" + strings.TrimSuffix(strings.Repeat(s+",", EmbeddingDim), ",") + "]"
 }
@@ -145,10 +145,10 @@ func TestSaveSongEmbedding(t *testing.T) {
 	defer db.Close()
 
 	t.Run("successful save", func(t *testing.T) {
-		embedding := embedding38(1.0)
+		embedding := embedding768(1.0)
 
 		mock.ExpectExec("INSERT INTO song_embeddings").
-			WithArgs(1, embedding38String(1.0)).
+			WithArgs(1, embedding768String(1.0)).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
 		err := SaveSongEmbedding(db, 1, embedding)
@@ -158,13 +158,13 @@ func TestSaveSongEmbedding(t *testing.T) {
 }
 
 // TestEmbeddingDimensionGuard verifies that vectors whose length differs from
-// the 38-dim contract are rejected in Go, before any SQL text is built
-// (prime directive: the pgvector column is vector(38)).
+// the 768-dim contract are rejected in Go, before any SQL text is
+// built (prime directive: the pgvector column is vector(768)).
 //
-// Objective: SaveSongEmbedding and FindSimilarSongs refuse non-38-dim input.
+// Objective: SaveSongEmbedding and FindSimilarSongs refuse non-768-dim input.
 // Given-When-Then: Given a wrong-width vector, When the function is called,
 // Then a dimension error is returned and no SQL statement is executed.
-// Edge cases: empty and nil vectors are rejected too; a valid 38-dim vector
+// Edge cases: empty and nil vectors are rejected too; a valid 768-dim vector
 // passes the guard and reaches SQL.
 func TestEmbeddingDimensionGuard(t *testing.T) {
 	tests := []struct {
@@ -203,7 +203,7 @@ func TestEmbeddingDimensionGuard(t *testing.T) {
 		})
 	}
 
-	t.Run("valid 38-dim passes the guard", func(t *testing.T) {
+	t.Run("valid 768-dim passes the guard", func(t *testing.T) {
 		db, mock, err := sqlmock.New()
 		if err != nil {
 			t.Fatalf("failed to create mock: %v", err)
@@ -211,10 +211,10 @@ func TestEmbeddingDimensionGuard(t *testing.T) {
 		defer db.Close()
 
 		mock.ExpectExec("INSERT INTO song_embeddings").
-			WithArgs(1, embedding38String(0.5)).
+			WithArgs(1, embedding768String(0.5)).
 			WillReturnResult(sqlmock.NewResult(1, 1))
 
-		assert.NoError(t, SaveSongEmbedding(db, 1, embedding38(0.5)))
+		assert.NoError(t, SaveSongEmbedding(db, 1, embedding768(0.5)))
 		assert.NoError(t, mock.ExpectationsWereMet())
 	})
 }
@@ -226,8 +226,8 @@ func TestFindSimilarSongs(t *testing.T) {
 	}
 	defer db.Close()
 
-	queryEmbedding := embedding38(1.0)
-	embeddingStr := embedding38String(1.0)
+	queryEmbedding := embedding768(1.0)
+	embeddingStr := embedding768String(1.0)
 
 	// Use proper time.Time values
 	time1, _ := time.Parse("2006-01-02", "2020-01-01")

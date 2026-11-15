@@ -1,6 +1,6 @@
 ---
 name: audio-processor-review
-description: "Run a focused review of the audio-processor (Essentia / FastAPI) microservice: pytest green, then a Code Reviewer pass scoped to audio-processor/ against the 38-dim embedding contract, normalization, and temp-file hygiene rules."
+description: "Run a focused review of the audio-processor (Essentia / FastAPI) microservice: pytest green, then a Code Reviewer pass scoped to audio-processor/ against the 768-dim MAEST embedding contract, L2 normalization, and temp-file hygiene rules."
 disable-model-invocation: true
 argument-hint: "Optional: base ref to diff against (default: main)"
 ---
