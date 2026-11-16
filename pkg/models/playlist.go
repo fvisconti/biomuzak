@@ -5,19 +5,24 @@ import (
 )
 
 // Playlist represents a playlist in the database
+// SortKey is the persisted column the GUI sorts by (added_at, title, artist
+// or position); the server defaults to added_at when unset/unknown.
 type Playlist struct {
 	ID        int       `json:"id"`
 	UserID    int       `json:"user_id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	SongCount int       `json:"song_count"`
+	SortKey   string    `json:"sort_key"`
 }
 
 // PlaylistSong represents a song in a playlist, with its position.
 // It embeds the Song model to include all song details.
 type PlaylistSong struct {
 	Song
-	Position int `json:"position"`
+	Position int       `json:"position"`
+	AddedAt  time.Time `json:"added_at"`
 }
 
 // FullPlaylist represents a playlist along with its songs.
@@ -28,5 +33,6 @@ type FullPlaylist struct {
 	Name      string         `json:"name"`
 	CreatedAt time.Time      `json:"created_at"`
 	UpdatedAt time.Time      `json:"updated_at"`
+	SortKey   string         `json:"sort_key"`
 	Songs     []PlaylistSong `json:"songs"`
 }

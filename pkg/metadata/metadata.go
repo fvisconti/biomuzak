@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -15,16 +16,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/models"
+
+	"go-postgres-example/pkg/storage"
 
 	"github.com/dhowden/tag"
 )
 
 // ProcessorAPI defines the interface for a metadata processor.
+// ProcessorAPI defines the interface for a metadata processor.
 type ProcessorAPI interface {
-	ProcessFile(filePath string) error
+	ProcessFile(filePath string, userID int, playlistID int) error
 }
 
 // Processor handles the metadata processing logic.
@@ -32,15 +37,27 @@ type Processor struct {
 	DB         *sql.DB
 	Cfg        *config.Config
 	MBClient   musicbrainz.Clienter
+	Storage    storage.StorageService
+	httpClient *http.Client
 }
 
-// NewProcessor creates a new Processor.
-func NewProcessor(db *sql.DB, cfg *config.Config) *Processor {
+// NewProcessor creates a new Processor. It returns an error instead of
+// calling log.Fatalf so request-path handlers (upload, backfill) can fail
+// gracefully with a sanitized message (prime directive: explicit errors).
+func NewProcessor(db *sql.DB, cfg *config.Config, storage storage.StorageService) (*Processor, error) {
 	mbClient, err := musicbrainz.NewClient(cfg)
 	if err != nil {
-		log.Fatalf("Failed to create MusicBrainz client: %v", err)
+		return nil, fmt.Errorf("failed to create MusicBrainz client: %w", err)
 	}
-	return &Processor{DB: db, Cfg: cfg, MBClient: mbClient}
+	return &Processor{
+		DB:       db,
+		Cfg:      cfg,
+		MBClient: mbClient,
+		Storage:  storage,
+		// A bounded timeout prevents a slow/hung audio processor from leaking
+		// goroutines and holding temp files on disk indefinitely.
+		httpClient: &http.Client{Timeout: 5 * time.Minute},
+	}, nil
 }
 
 // ProcessFile orchestrates the entire process for a single file.
@@ -74,7 +91,7 @@ func (p *Processor) getGenre(song *models.Song, filePath string) (string, error)
 	return song.Genre, nil
 }
 
-func (p *Processor) ProcessFile(filePath string) error {
+func (p *Processor) ProcessFile(filePath string, userID int, playlistID int) error {
 	// 1. Generate file hash
 	hash, err := generateFileHash(filePath)
 	if err != nil {
@@ -82,76 +99,106 @@ func (p *Processor) ProcessFile(filePath string) error {
 	}
 
 	// 2. Check for duplicates
-	exists, err := p.songExists(hash)
+	// 2. Check for duplicates
+	exists, existingID, err := p.songExists(hash)
 	if err != nil {
 		return fmt.Errorf("failed to check for song existence: %w", err)
 	}
+
+	var songID int
 	if exists {
-		log.Printf("Song with hash %s already exists. Skipping.", hash)
-		return nil
-	}
-
-	// 3. Extract metadata from file
-	song, err := extractMetadata(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to extract metadata from %s: %w", filePath, err)
-	}
-	song.FingerprintHash = hash
-
-	// 4. Move file to permanent storage location
-	permanentPath, err := p.moveToUploadDir(filePath, hash)
-	if err != nil {
-		return fmt.Errorf("failed to move file to upload directory: %w", err)
-	}
-	song.FilePath = permanentPath
-
-	// 5. Enrich metadata with MusicBrainz
-	if err := p.MBClient.EnrichMetadata(song); err != nil {
-		// Log the error but continue, as MusicBrainz is an enhancement, not a requirement.
-		log.Printf("Failed to enrich metadata for %s: %v", filePath, err)
-	}
-
-	// 6. Get genre using the new logic
-	genreName, err := p.getGenre(song, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get genre: %w", err)
-	}
-
-	// 7. Find or create genre
-	if genreName != "" {
-		genreID, err := p.findOrCreateGenre(genreName)
-		if err != nil {
-			return fmt.Errorf("failed to find or create genre: %w", err)
-		}
-		song.GenreID = sql.NullInt64{Int64: int64(genreID), Valid: true}
-	}
-
-	// 8. Save song to database
-	songID, err := p.saveSong(song)
-	if err != nil {
-		return fmt.Errorf("failed to save song %s: %w", song.Title, err)
-	}
-	song.ID = songID
-
-	// 9. Get and save song embedding (using the original temp file path)
-	embedding, err := p.getEmbeddingsFromService(filePath)
-	if err != nil {
-		// Log the error but don't fail the whole process, as embedding is an enhancement.
-		log.Printf("Failed to get embedding for song ID %d: %v", songID, err)
+		log.Printf("Song with hash %s already exists. Using existing ID %d.", hash, existingID)
+		songID = existingID
+		// Even if it exists, we must link it to the user and playlist!
 	} else {
-		if err := db.SaveSongEmbedding(p.DB, songID, embedding); err != nil {
-			log.Printf("Failed to save embedding for song ID %d: %v", songID, err)
+		// New Song Logic
+
+		// 3. Extract metadata from file
+		song, err := extractMetadata(filePath)
+		if err != nil {
+			return fmt.Errorf("failed to extract metadata from %s: %w", filePath, err)
+		}
+		song.FingerprintHash = hash
+
+		// 4. Move file to permanent storage location
+		permanentPath, err := p.moveToUploadDir(filePath, hash)
+		if err != nil {
+			return fmt.Errorf("failed to move file to upload directory: %w", err)
+		}
+		song.FilePath = permanentPath
+
+		// 5. Enrich metadata with MusicBrainz
+		if err := p.MBClient.EnrichMetadata(song); err != nil {
+			// Log the error but continue, as MusicBrainz is an enhancement, not a requirement.
+			log.Printf("Failed to enrich metadata for %s: %v", filePath, err)
+		}
+
+		// 6. Get genre using the new logic
+		genreName, err := p.getGenre(song, filePath)
+		if err != nil {
+			return fmt.Errorf("failed to get genre: %w", err)
+		}
+
+		// 7. Find or create genre
+		if genreName != "" {
+			genreID, err := p.findOrCreateGenre(genreName)
+			if err != nil {
+				return fmt.Errorf("failed to find or create genre: %w", err)
+			}
+			song.GenreID = sql.NullInt64{Int64: int64(genreID), Valid: true}
+		}
+
+		// 8. Save song to database
+		songID, err = p.saveSong(song)
+		if err != nil {
+			return fmt.Errorf("failed to save song %s: %w", song.Title, err)
+		}
+		song.ID = songID
+
+		// 8b. Tag the stored object with genre/artist (E4). Best-effort:
+		// tags are informational, a tagging failure must not fail the upload.
+		p.tagSongObject(permanentPath, song, genreName)
+
+		// 9. Get and save song embedding (using the original temp file path)
+		embedding, err := p.getEmbeddingsFromService(context.Background(), filePath)
+		if err != nil {
+			// Log the error but don't fail the whole process, as embedding is an enhancement.
+			log.Printf("Failed to get embedding for song ID %d: %v", songID, err)
 		} else {
-			log.Printf("Successfully saved embedding for song ID %d", songID)
+			if err := db.SaveSongEmbedding(p.DB, songID, embedding); err != nil {
+				log.Printf("Failed to save embedding for song ID %d: %v", songID, err)
+			} else {
+				log.Printf("Successfully saved embedding for song ID %d", songID)
+			}
+		}
+		log.Printf("Successfully processed and saved NEW song: %s - %s (ID: %d)", song.Artist, song.Title, song.ID)
+	}
+
+	// ALWAYS perform these steps (for both new and existing songs)
+
+	// 10. Link to User
+	if err := db.AddUserSong(p.DB, userID, songID); err != nil {
+		log.Printf("Failed to link song %d to user %d: %v", songID, userID, err)
+	} else {
+		log.Printf("Linked song %d to user %d", songID, userID)
+	}
+
+	// 11. Add to Playlist if requested
+	if playlistID > 0 {
+		// Default position is 0 (append)
+		if err := db.AddSongToPlaylist(p.DB, playlistID, songID, 0); err != nil {
+			log.Printf("Failed to add song %d to playlist %d: %v", songID, playlistID, err)
+		} else {
+			log.Printf("Added song %d to playlist %d", songID, playlistID)
 		}
 	}
 
-	log.Printf("Successfully processed and saved song: %s - %s (ID: %d)", song.Artist, song.Title, song.ID)
 	return nil
 }
 
-// getEmbeddingsFromService calls the audio processor microservice to generate embeddings.
-func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error) {
+// getEmbeddingsFromService calls the audio processor microservice to generate
+// embeddings. ctx aborts an in-flight call (e.g. a cancelled backfill job).
+func (p *Processor) getEmbeddingsFromService(ctx context.Context, filePath string) ([]float64, error) {
 	// Open the audio file
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -162,18 +209,18 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 	// Create a multipart form body
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	
+
 	// Create the file part
 	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create form file: %w", err)
 	}
-	
+
 	// Copy file content to the form
 	if _, err := io.Copy(part, file); err != nil {
 		return nil, fmt.Errorf("failed to copy file content: %w", err)
 	}
-	
+
 	// Close the multipart writer
 	if err := writer.Close(); err != nil {
 		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
@@ -181,15 +228,19 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 
 	// Create the HTTP request
 	url := p.Cfg.AudioProcessorURL + "/process-audio/"
-	req, err := http.NewRequest("POST", url, body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	// Send the request
+	// Send the request using the shared client (which enforces a timeout).
+	// Fall back to a default client if none is configured (e.g. in tests).
+	client := p.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: 5 * time.Minute}
+	}
 	log.Printf("Calling audio processor at %s for file %s", url, filePath)
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to send request to audio processor: %w", err)
@@ -214,40 +265,108 @@ func (p *Processor) getEmbeddingsFromService(filePath string) ([]float64, error)
 	return result.Embedding, nil
 }
 
-// moveToUploadDir moves a file from temporary location to the permanent upload directory.
-// Files are organized by hash to prevent collisions and make deduplication easier.
-func (p *Processor) moveToUploadDir(tempPath string, hash string) (string, error) {
-	// Create upload directory if it doesn't exist
-	if err := os.MkdirAll(p.Cfg.UploadDir, 0755); err != nil {
-		return "", fmt.Errorf("failed to create upload directory: %w", err)
+// GenerateEmbeddingForSong generates and persists an embedding for an existing
+// song by ID. It downloads the stored audio file from object storage to a temp
+// file, sends it to the audio processor, and saves the resulting embedding.
+// Used by the cold-start backfill for songs that lack an embedding.
+func (p *Processor) GenerateEmbeddingForSong(ctx context.Context, songID int) error {
+	filePath, err := db.GetSongFilePath(ctx, p.DB, songID)
+	if err != nil {
+		return fmt.Errorf("failed to get file path for song %d: %w", songID, err)
 	}
 
+	stream, err := p.Storage.GetFileStream(ctx, filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read song %d from storage: %w", songID, err)
+	}
+	defer stream.Close()
+
+	// Write to a temp file so the audio processor can read it by path.
+	tmp, err := os.CreateTemp("", "biomuzak-backfill-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := io.Copy(tmp, stream); err != nil {
+		tmp.Close()
+		return fmt.Errorf("failed to write temp file for song %d: %w", songID, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	embedding, err := p.getEmbeddingsFromService(ctx, tmpPath)
+	if err != nil {
+		return fmt.Errorf("failed to generate embedding for song %d: %w", songID, err)
+	}
+
+	if err := db.SaveSongEmbedding(p.DB, songID, embedding); err != nil {
+		return fmt.Errorf("failed to save embedding for song %d: %w", songID, err)
+	}
+	return nil
+}
+
+// moveToUploadDir uploads a file from temporary location to MinIO.
+// Files are organized by hash to prevent collisions.
+func (p *Processor) moveToUploadDir(tempPath string, hash string) (string, error) {
 	// Use the file extension from the original file
 	ext := filepath.Ext(tempPath)
-	
-	// Create the permanent filename based on hash to ensure uniqueness
-	permanentFilename := hash + ext
-	permanentPath := filepath.Join(p.Cfg.UploadDir, permanentFilename)
 
-	// Copy the file to permanent location
+	// Create the permanent filename (object key) based on hash
+	objectName := hash + ext
+
+	// Open the source file
 	sourceFile, err := os.Open(tempPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer sourceFile.Close()
 
-	destFile, err := os.Create(permanentPath)
+	// get file info for size
+	i, err := sourceFile.Stat()
 	if err != nil {
-		return "", fmt.Errorf("failed to create destination file: %w", err)
-	}
-	defer destFile.Close()
-
-	if _, err := io.Copy(destFile, sourceFile); err != nil {
-		return "", fmt.Errorf("failed to copy file: %w", err)
+		return "", fmt.Errorf("failed to stat file: %w", err)
 	}
 
-	log.Printf("Moved file from %s to permanent location: %s", tempPath, permanentPath)
-	return permanentPath, nil
+	// Detect content type
+	header := make([]byte, 512)
+	if _, err := sourceFile.Read(header); err != nil {
+		return "", fmt.Errorf("failed to read file header: %w", err)
+	}
+	contentType := http.DetectContentType(header)
+
+	// Seek back to start
+	if _, err := sourceFile.Seek(0, 0); err != nil {
+		return "", fmt.Errorf("failed to seek file: %w", err)
+	}
+
+	// Upload to MinIO
+	ctx := context.Background() // Use appropriate context if available
+	err = p.Storage.UploadFile(ctx, objectName, sourceFile, i.Size(), contentType)
+	if err != nil {
+		return "", fmt.Errorf("failed to upload file to storage: %w", err)
+	}
+
+	log.Printf("Uploaded file %s to storage as %s", tempPath, objectName)
+	return objectName, nil
+}
+
+// tagSongObject applies the E4 informational object tags (genre, artist) to
+// a stored object. Failures are logged, never returned: tags are metadata
+// for browsing/filtering outside the app and must not break the upload path.
+func (p *Processor) tagSongObject(objectName string, song *models.Song, genreName string) {
+	tagMap := map[string]string{}
+	if genreName != "" {
+		tagMap["genre"] = genreName
+	}
+	if song.Artist != "" {
+		tagMap["artist"] = song.Artist
+	}
+	if err := p.Storage.TagObject(context.Background(), objectName, tagMap); err != nil {
+		log.Printf("Failed to tag object %s: %v", objectName, err)
+	}
 }
 
 func generateFileHash(filePath string) (string, error) {
@@ -289,7 +408,7 @@ func extractMetadata(filePath string) (*models.Song, error) {
 		Year:         meta.Year(),
 		Genre:        meta.Genre(),
 		Duration:     0, // dhowden/tag doesn't seem to provide duration directly
-		Bitrate:      0, // dhowden/tag doesn't seem to provide bitrate directly
+		Bitrate:      0, // TODO: Extract from MP3 frame headers - library doesn't expose easily
 		FileSize:     fileInfo.Size(),
 		LastModified: fileInfo.ModTime(),
 	}
@@ -297,20 +416,30 @@ func extractMetadata(filePath string) (*models.Song, error) {
 	return song, nil
 }
 
-func (p *Processor) songExists(hash string) (bool, error) {
-	var exists bool
-	err := p.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM songs WHERE fingerprint_hash = $1)", hash).Scan(&exists)
-	if err != nil && err != sql.ErrNoRows {
-		return false, err
+func (p *Processor) songExists(hash string) (bool, int, error) {
+	var songID int
+	err := p.DB.QueryRow("SELECT id FROM songs WHERE fingerprint_hash = $1", hash).Scan(&songID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, 0, nil
+		}
+		return false, 0, err
 	}
-	return exists, nil
+	return true, songID, nil
 }
 
 func (p *Processor) findOrCreateGenre(name string) (int, error) {
+	// Use an atomic upsert to avoid the check-then-insert race where two
+	// concurrent uploads of the same new genre both try to INSERT and one
+	// fails with a unique-violation.
 	var genreID int
-	err := p.DB.QueryRow("SELECT id FROM genres WHERE name = $1", name).Scan(&genreID)
+	err := p.DB.QueryRow(
+		"INSERT INTO genres (name) VALUES ($1) ON CONFLICT (name) DO NOTHING RETURNING id",
+		name,
+	).Scan(&genreID)
 	if err == sql.ErrNoRows {
-		err = p.DB.QueryRow("INSERT INTO genres (name) VALUES ($1) RETURNING id", name).Scan(&genreID)
+		// A concurrent insert won the race; fetch the existing row.
+		err = p.DB.QueryRow("SELECT id FROM genres WHERE name = $1", name).Scan(&genreID)
 		if err != nil {
 			return 0, err
 		}

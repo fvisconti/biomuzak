@@ -56,4 +56,8 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-server
+
+minio_data/
+
+# pi agent (project-local extensions)
+.pi/extensions/node_modules

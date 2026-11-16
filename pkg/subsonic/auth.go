@@ -2,26 +2,31 @@ package subsonic
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/hex"
 	"net/http"
 	"strings"
+
+	"go-postgres-example/pkg/auth"
+	"go-postgres-example/pkg/config"
 )
 
 type contextKey string
 
 const userIDKey contextKey = "userID"
 
-// AuthMiddleware is a middleware that handles Subsonic authentication
-func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
+// AuthMiddleware is a middleware that handles Subsonic authentication.
+// It supports password auth (p) and token auth (t): the token is derived
+// server-side from the username under the JWT secret (see token.go), so it
+// can be verified without knowing the plaintext password.
+func AuthMiddleware(db *sql.DB, cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			params := r.URL.Query()
 			username := params.Get("u")
 			password := params.Get("p")
 			token := params.Get("t")
-			salt := params.Get("s")
 
 			if username == "" {
 				respondWithXML(w, &Response{
@@ -52,21 +57,23 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 				return
 			}
 
-			if token != "" && salt != "" {
-				// Token-based authentication
-				expectedToken := md5.Sum([]byte(passwordHash + salt))
-				if token != hex.EncodeToString(expectedToken[:]) {
+			if token != "" {
+				// Token-based authentication (Subsonic spec: t). The token is
+				// derived from the username under the JWT secret, so bcrypt is
+				// not needed. Constant-time compare to avoid timing oracles.
+				expected := DeriveSubsonicToken(cfg.JWTSecret, username)
+				if subtle.ConstantTimeCompare([]byte(token), []byte(expected)) != 1 {
 					respondWithXML(w, &Response{
 						Status: "failed",
 						Error: &Error{
 							Code:    40,
-							Message: "Wrong username or password",
+							Message: "Wrong username or token",
 						},
 					})
 					return
 				}
 			} else if password != "" {
-				// Password-based authentication
+				// Password-based authentication.
 				if strings.HasPrefix(password, "enc:") {
 					hexPassword, err := hex.DecodeString(strings.TrimPrefix(password, "enc:"))
 					if err != nil {
@@ -81,18 +88,8 @@ func AuthMiddleware(db *sql.DB) func(http.Handler) http.Handler {
 					}
 					password = string(hexPassword)
 				}
-				// Note: This is not secure, but part of the Subsonic API spec.
-				// The provided hash in the database is generated with bcrypt, which is not compatible with MD5.
-				// For this implementation, we will assume the password is stored in plain text for compatibility.
-				// This is a major security flaw and should be addressed in a real-world application.
-				// We will re-hash the provided password with bcrypt and compare it to the stored hash.
-				// This is not what the Subsonic API specifies, but it's the only way to make it work with the existing user management.
-				// A better solution would be to store the password in a way that is compatible with both authentication methods.
-				// For now, we will just simulate a check.
-				// This is a placeholder for the actual password check.
-				// In a real implementation, you would need to implement a proper check.
-				// For the purpose of this exercise, we will assume the password is correct if it is not empty.
-				if password == "" {
+				// Verify the supplied password against the stored bcrypt hash.
+				if !auth.CheckPasswordHash(password, passwordHash) {
 					respondWithXML(w, &Response{
 						Status: "failed",
 						Error: &Error{

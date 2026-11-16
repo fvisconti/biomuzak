@@ -16,14 +16,21 @@ func Authenticator(jwtSecret string) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				http.Error(w, "Authorization header is required", http.StatusUnauthorized)
-				return
+			var tokenString string
+			if authHeader != "" {
+				// When the Authorization header is present, require the Bearer scheme.
+				if !strings.HasPrefix(authHeader, "Bearer ") {
+					http.Error(w, "Could not find bearer token", http.StatusUnauthorized)
+					return
+				}
+				tokenString = strings.TrimPrefix(authHeader, "Bearer ")
+			} else {
+				// Fallback to a query param (used by <audio> elements that can't set headers).
+				tokenString = r.URL.Query().Get("token")
 			}
 
-			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
-			if tokenString == authHeader {
-				http.Error(w, "Could not find bearer token in Authorization header", http.StatusUnauthorized)
+			if tokenString == "" {
+				http.Error(w, "Authorization header is required", http.StatusUnauthorized)
 				return
 			}
 
@@ -47,4 +54,12 @@ func Authenticator(jwtSecret string) func(next http.Handler) http.Handler {
 func GetUserIDFromContext(ctx context.Context) (int, bool) {
 	userID, ok := ctx.Value(userContextKey).(int)
 	return userID, ok
+}
+
+// WithUserIDForTest injects a user ID into a context. TEST SUPPORT ONLY: it
+// exists so unit tests in other packages can exercise JWT-protected handlers
+// without a real JWT. Never call it from a production request path — it
+// forges the authenticated principal.
+func WithUserIDForTest(ctx context.Context, userID int) context.Context {
+	return context.WithValue(ctx, userContextKey, userID)
 }

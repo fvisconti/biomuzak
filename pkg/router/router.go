@@ -13,11 +13,11 @@ import (
 )
 
 // New creates a new chi router and sets up the routes
-func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, subsonicHandler *subsonic.Handler) *chi.Mux {
+func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandler, libraryHandler *handlers.LibraryHandler, playlistHandler *handlers.PlaylistHandler, songHandler *handlers.SongHandler, streamHandler *handlers.StreamHandler, subsonicHandler *subsonic.Handler, tidalHandler *handlers.TidalHandler, exportHandler *handlers.ExportHandler, backfillHandler *handlers.BackfillHandler, genreHandler *handlers.GenreHandler, corsAllowedOrigins string) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Enable CORS for cross-origin requests from the frontend
-	r.Use(middleware.CORS())
+	r.Use(middleware.CORS(corsAllowedOrigins))
 
 	// Health check endpoint (no auth required)
 	r.Get("/api/health", func(w http.ResponseWriter, r *http.Request) {
@@ -30,8 +30,8 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 	// API routes
 	// Public routes
-	r.Post("/register", authHandler.Register)
-	r.Post("/login", authHandler.Login)
+	r.Post("/api/auth/register", authHandler.Register)
+	r.Post("/api/auth/login", authHandler.Login)
 	r.Get("/api/config", authHandler.PublicConfig)
 
 	// Protected routes
@@ -49,14 +49,21 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 		})
 
 		// Current user info
-		r.Get("/api/me", authHandler.Me)
+		r.Get("/api/auth/me", authHandler.Me)
+		r.Get("/api/search", libraryHandler.SearchHandler)
+
+		// Subsonic API token for the authenticated user (third-party clients).
+		r.Get("/api/subsonic/token", subsonic.NewTokenHandler(authHandler.DB, authHandler.Cfg).GetSubsonicTokenHandler)
 
 		r.Post("/api/upload", uploadHandler.Upload)
 
 		// Library and Song routes
 		r.Get("/api/library", libraryHandler.GetLibraryHandler)
 		r.Post("/api/songs/{songID}/rate", libraryHandler.RateSongHandler)
+		r.Delete("/api/songs/{songID}", libraryHandler.DeleteSongHandler)
 		r.Get("/api/songs/{songID}/similar", songHandler.GetSimilarSongsHandler)
+		r.Get("/api/songs/{songID}/stream", streamHandler.StreamSongHandler)
+		r.Get("/api/songs/{songID}/download", streamHandler.DownloadSongHandler)
 
 		// Playlist routes
 		r.Route("/api/playlists", func(r chi.Router) {
@@ -65,20 +72,62 @@ func New(authHandler *handlers.AuthHandler, uploadHandler *handlers.UploadHandle
 
 			r.Route("/{playlistID}", func(r chi.Router) {
 				r.Get("/", playlistHandler.GetPlaylistHandler)
+				r.Get("/download", playlistHandler.DownloadPlaylistHandler)
 				r.Put("/", playlistHandler.UpdatePlaylistHandler)
 				r.Delete("/", playlistHandler.DeletePlaylistHandler)
 
 				// Playlist songs routes
 				r.Post("/songs", playlistHandler.AddSongToPlaylistHandler)
+				r.Put("/reorder", playlistHandler.ReorderPlaylistSongsHandler)
+				r.Put("/order", playlistHandler.ReorderPlaylistOrderHandler)
 				r.Delete("/songs/{songID}", playlistHandler.RemoveSongFromPlaylistHandler)
 			})
 
-			// Admin-only routes
-			r.Group(func(r chi.Router) {
-				r.Use(middleware.AdminOnly(authHandler.DB))
-				r.Post("/api/admin/users", authHandler.AdminCreateUser)
-			})
 		})
+
+		// Tidal routes
+		r.Route("/api/tidal", func(r chi.Router) {
+			r.Post("/pair/start", tidalHandler.PairStartHandler)
+			r.Get("/pair/status", tidalHandler.PairStatusHandler)
+			r.Get("/status", tidalHandler.StatusHandler)
+			r.Put("/settings", tidalHandler.SettingsHandler)
+			r.Delete("/connection", tidalHandler.DisconnectHandler)
+
+			r.Get("/library/{kind}", tidalHandler.LibraryHandler)
+			r.Get("/albums/{albumID}", tidalHandler.AlbumHandler)
+			r.Get("/playlists/{playlistID}", tidalHandler.PlaylistHandler)
+
+			r.Post("/import", tidalHandler.ImportHandler)
+			r.Post("/import/link", tidalHandler.LinkImportHandler)
+			r.Get("/import/status", tidalHandler.ImportStatusHandler)
+		})
+
+		// Export routes
+		r.Route("/api/export", func(r chi.Router) {
+			r.Post("/", exportHandler.StartHandler)
+			r.Get("/status", exportHandler.StatusHandler)
+		})
+
+		// Admin-only routes (root under /api/admin)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.AdminOnly(authHandler.DB))
+			r.Get("/api/admin/users", authHandler.AdminListUsers)
+			r.Post("/api/admin/users", authHandler.AdminCreateUser)
+			r.Delete("/api/admin/users/{id}", authHandler.DeleteUser)
+			r.Put("/api/songs/{songID}/genre", libraryHandler.UpdateSongGenreHandler)
+			r.Delete("/api/admin/songs/{songID}", songHandler.DeleteSongHandler)
+
+			// Genre catalogue (E3c): list / create / delete, admin-only.
+			r.Get("/api/admin/genres", genreHandler.ListHandler)
+			r.Post("/api/admin/genres", genreHandler.CreateHandler)
+			r.Delete("/api/admin/genres/{genreID}", genreHandler.DeleteHandler)
+
+			// Embedding backfill (cold-start): generate embeddings for songs
+			// that lack them so "similar songs" works for the whole catalog.
+			r.Post("/api/admin/embeddings/backfill", backfillHandler.StartBackfillHandler)
+			r.Get("/api/admin/embeddings/backfill/status", backfillHandler.BackfillStatusHandler)
+		})
+
 	})
 
 	// Serve static files from frontend/build directory

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/xml"
 	"net/http"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,17 +11,19 @@ import (
 
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
+	"go-postgres-example/pkg/storage"
 )
 
 // Handler holds the dependencies for the subsonic handlers
 type Handler struct {
-	DB  *sql.DB
-	Cfg *config.Config
+	DB      *sql.DB
+	Cfg     *config.Config
+	Storage storage.StorageService
 }
 
 // NewHandler creates a new Handler
-func NewHandler(db *sql.DB, cfg *config.Config) *Handler {
-	return &Handler{DB: db, Cfg: cfg}
+func NewHandler(db *sql.DB, cfg *config.Config, storage storage.StorageService) *Handler {
+	return &Handler{DB: db, Cfg: cfg, Storage: storage}
 }
 
 // Ping is a handler for the /rest/ping.view endpoint
@@ -57,10 +58,14 @@ func (h *Handler) GetIndexes(w http.ResponseWriter, r *http.Request) {
 
 	indexMap := make(map[string][]Artist)
 	for _, artist := range artists {
+		if artist.Name == "" {
+			continue
+		}
 		firstLetter := strings.ToUpper(string(artist.Name[0]))
 		indexMap[firstLetter] = append(indexMap[firstLetter], Artist{
-			ID:   strconv.Itoa(artist.ID),
-			Name: artist.Name,
+			ID:         makeArtistID(artist.Name),
+			Name:       artist.Name,
+			AlbumCount: artist.AlbumCount,
 		})
 	}
 
@@ -123,19 +128,16 @@ func (h *Handler) Search3(w http.ResponseWriter, r *http.Request) {
 
 	for _, album := range albums {
 		response.SearchResult3.Albums = append(response.SearchResult3.Albums, Album{
-			ID:     strconv.Itoa(album.ID),
-			Name:   album.Name,
-			Artist: album.Artist,
+			ID:       makeAlbumID(album.Artist, album.Name),
+			Name:     album.Name,
+			Artist:   album.Artist,
+			ArtistID: makeArtistID(album.Artist),
 		})
 	}
 
 	for _, song := range songs {
-		response.SearchResult3.Songs = append(response.SearchResult3.Songs, Song{
-			ID:     strconv.Itoa(song.ID),
-			Title:  song.Title,
-			Artist: song.Artist,
-			Album:  song.Album,
-		})
+		// db.Search returns full song rows; enrich into the Subsonic model.
+		response.SearchResult3.Songs = append(response.SearchResult3.Songs, toSong(song, r))
 	}
 
 	respondWithXML(w, response)
@@ -167,7 +169,20 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	filePath, err := db.GetSongFilePath(h.DB, songID)
+	// Auth check. The catalog is shared, so any authenticated user can stream
+	// any track.
+	if _, ok := GetUserIDFromContext(r.Context()); !ok {
+		respondWithXML(w, &Response{
+			Status: "failed",
+			Error: &Error{
+				Code:    40,
+				Message: "Unauthorized",
+			},
+		})
+		return
+	}
+
+	filePath, err := db.GetSongFilePath(r.Context(), h.DB, songID)
 	if err != nil {
 		respondWithXML(w, &Response{
 			Status: "failed",
@@ -179,14 +194,16 @@ func (h *Handler) Stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := os.Open(filePath)
+	// Stream from storage service
+	fileStream, err := h.Storage.GetFileStream(r.Context(), filePath)
 	if err != nil {
-		http.Error(w, "Failed to open file", http.StatusInternalServerError)
+		// Log the error
+		http.Error(w, "Failed to open file stream", http.StatusInternalServerError)
 		return
 	}
-	defer file.Close()
+	defer fileStream.Close()
 
-	http.ServeContent(w, r, file.Name(), time.Time{}, file)
+	http.ServeContent(w, r, filePath, time.Time{}, fileStream)
 }
 
 func respondWithXML(w http.ResponseWriter, data interface{}) {

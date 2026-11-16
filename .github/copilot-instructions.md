@@ -1,138 +1,118 @@
-# Copilot Instructions for biomuzak
+# biomuzak
 
+A self-hosted music organizer, player, and streamer. Users upload audio files; the
+server extracts metadata, stores files in MinIO, and serves a REST API plus a
+Subsonic-compatible API for playback. A Python microservice generates 768-dim MAEST
+audio embeddings (Essentia) used for "similar songs."
 
-**ABSOLUTE RULE: Do not take initiative without asking for confirmation first.**
+## Golden rules — red/green TDD (mandatory)
 
-## Project Overview
+- Every change starts with a failing test. Write it, watch it fail, implement the
+  minimum to make it pass, then refactor. Never modify behaviour without a red test
+  first. Never report a task done while any test is red.
+- Don't guess when the stack is high — a wrong direction can be expensive to roll
+  back. Ask the user narrow questions in those cases, to share knowledge and decisions.
 
-biomuzak is a music organizer, player, and streamer application consisting of:
-- **Go backend server**: RESTful API with Subsonic API compatibility
-- **PostgreSQL database**: For storing music library metadata, playlists, and user data
-- **Python audio processor microservice**: Generates feature embeddings using Essentia library
+## Prime directives
 
-## Architecture
+1. **Shared catalog, per-user playlists.** The song catalog is **global**: any
+   authenticated user can list, stream, and download any track. Genre editing
+   and song deletion are admin-only. The
+   per-user boundary is **playlists and ratings** — every playlist/rating query is
+   scoped to the requesting user, taken from the verified JWT claim and from nowhere
+   else — never a body field, path segment, or query parameter. Admin-only routes are
+   gated by the `is_admin` check in `pkg/middleware`. A query that returns another
+   user's *playlists* or *ratings*, or an admin route reachable without the admin
+   check, is a defect. (Deliberate change from the old per-user scoping; see
+   `docs/PLAN.md` E1.)
+2. **Parameterized SQL only.** Every query binds values with `$1, $2, ...`. No
+   `fmt.Sprintf` into query text, ever.
+3. **Data must never become code.** Every tunable is an environment variable with a
+   documented default. Secrets (`JWT_SECRET`, `MINIO_*`, `TIDAL_*`) have no defaults
+   that matter in production and are never logged or returned to a client.
+4. **Migrations are immutable.** Schema changes are new numbered files in
+   `db/migrations/`, applied in filename order on startup. Never edit an applied
+   migration; never issue DDL from application code.
+5. **Explicit errors.** Check and handle every error. Handlers degrade gracefully and
+   return a sanitized message; internals never leak to the client.
 
-### Backend (Go)
-- **Entry point**: `cmd/server/main.go`
-- **Package structure**:
-  - `pkg/auth`: JWT-based authentication
-  - `pkg/handlers`: HTTP request handlers (auth, library, playlist, song, upload)
-  - `pkg/db`: Database connection and migrations
-  - `pkg/models`: Data models
-  - `pkg/metadata`: Audio file metadata extraction and genre detection
-  - `pkg/musicbrainz`: MusicBrainz API integration
-  - `pkg/router`: HTTP routing setup
-  - `pkg/subsonic`: Subsonic API compatibility layer
-  - `pkg/middleware`: HTTP middleware components
-  - `pkg/config`: Configuration management
+## Tech stack
 
-### Audio Processor (Python)
-- **Location**: `audio-processor/`
-- **Purpose**: Generates 38-dimensional feature embedding vectors from audio files
-- **Technology**: FastAPI with Essentia library
-- **Deployment**: Dockerized microservice
+- **Backend**: Go 1.25 (`go.mod`), `chi` router, `pgx/v4` (Postgres), `golang-jwt`,
+  `dhowden/tag`, `minio-go`. Module name is `go-postgres-example` (historical — keep it).
+- **Database**: PostgreSQL 18 (`tensorchord/vchord-suite:pg18-latest`) with `pgvector`
+  for the `vector(N)` type and `vchord` (`vchordrq`) for the dense index on 768-dim
+  song embeddings.
+- **Audio processor**: Python FastAPI + Essentia (`audio-processor/`).
+- **Frontend**: React + Vite (`frontend/`).
+- **Testing**: Go `testify` + `go-sqlmock`; Python `pytest`.
 
-## Development Guidelines
+## Commands
 
-### Go Code Style
-1. **Testing**: Write tests for new handlers and business logic in `*_test.go` files
-2. **Error Handling**: Always check and handle errors explicitly
-3. **Database Operations**: Use the pgx library for PostgreSQL interactions
-4. **Logging**: Use the standard `log` package for logging
-5. **Module Name**: The module is named `go-postgres-example` in `go.mod` and import paths (historical artifact from project template - maintained for backward compatibility)
+```bash
+go test -race ./...        # unit suite (offline, go-sqlmock, httptest)
+go build ./...             # build
+go vet ./...               # vet
+pytest                     # audio-processor tests (run inside audio-processor/)
+docker compose up          # full stack (postgres, backend, frontend, audio-processor, minio)
+```
 
-### Code Organization
-- Place HTTP handlers in `pkg/handlers/`
-- Put data models in `pkg/models/`
-- Keep database-related code in `pkg/db/`
-- Middleware goes in `pkg/middleware/`
+## Working agreements
 
-### Testing
-- Run tests with: `go test ./...`
-- Test files should be co-located with the code they test
-- Use table-driven tests where appropriate
-- Mock database interactions using appropriate testing patterns
+- Go style and package layout: `.github/instructions/go.instructions.md` (authoritative).
+- SQL and database rules: `.github/instructions/sql.instructions.md`.
+- Vector search rules: `.github/instructions/vchord.instructions.md` (ground engine
+  decisions in the official VectorChord docs it links).
+- Audio-processor (Essentia/FastAPI) rules: `.github/instructions/audio-processor.instructions.md`.
+- Frontend (React/Vite/Chakra) rules: `.github/instructions/frontend.instructions.md`.
+- Testing rules: `.github/instructions/tests.instructions.md`.
+- Docs sync: `.github/instructions/docs.instructions.md`.
+- Keep files focused; prefer a new file over growing any file past ~800 lines.
+- Vector search is bounded k-NN only (`ORDER BY embedding <=> $1 LIMIT k`) through
+  `pkg/db/similar.go`; a distance comparison in `WHERE` is a defect.
+- **Every user-visible change ⇒ one bullet under `## [Unreleased]` in
+  `docs/CHANGELOG.md`** (Keep a Changelog).
+- Use Conventional Commits (`feat(scope):`, `fix(scope):`, `refactor(scope):`, `docs:`).
 
-### Database
-- Migrations are stored in `db/migrations/`
-- The application runs migrations on startup
-- Use parameterized queries to prevent SQL injection
+## Review gate — the life of a change
 
-### API Design
-- RESTful endpoints for the main API
-- Subsonic API compatibility through `/rest/` endpoints
-- JWT authentication for protected endpoints
-- Support for multipart file uploads for audio files
+A task is **not done** until the diff has been reviewed and every finding is fixed or
+dismissed with a one-line reason. The three reviews are **advisory** — they record a
+marker as evidence but do not block a commit (a WIP commit with reviews pending is
+intentional and allowed). CI is the floor.
 
-### Configuration
-- Environment variables are loaded from `.env` file (see `.env.example`)
-- Required variables:
-  - `DATABASE_URL`: PostgreSQL connection string
-  - `PORT`: Server port (default: 8080)
-  - `JWT_SECRET`: Secret key for JWT signing
-  - `UPLOAD_DIR`: Directory for uploaded audio files
-  - `AUDIO_PROCESSOR_URL`: URL of the audio processor microservice
+**Reviews are invoked, never automatic.** No agent (Copilot, pi, or a
+`run_agent` subagent) may start any review on its own initiative — not as part
+of "finishing the task", not from a plan/todo item, not before committing.
+A review starts only from an explicit human request (a named skill like
+`/pre-pr-review` or an instruction to review). The default end-of-task behaviour
+is: step 1 green + changelog bullet → stop and report; wait for the human to
+invoke reviews.
 
-### Audio Processing
-- Supported formats: MP3, FLAC, and other common audio formats
-- Metadata extraction using the `github.com/dhowden/tag` library
-- Genre detection via MusicBrainz API with fallback to file metadata
-- File hashing to prevent duplicates
+1. `go test -race ./...` and `go vet ./...` green.
+2. `/pre-pr-review` — fresh-context Code Reviewer on the diff; **human** dispositions
+   every finding (fix or reason).
+3. `/security-review` — Security Reviewer; an open CRITICAL must be fixed or
+   explicitly accepted.
+4. `/performance-review` — Performance Reviewer; a claim without a measurement is
+   marked "needs measurement", not accepted.
+5. Scoped reviews (run when the diff touches that area):
+   - `/audio-processor-review` — Code Reviewer scoped to `audio-processor/`
+     against the 768-dim MAEST contract, L2 normalization, and temp-file rules.
+   - `/frontend-review` — Code Reviewer scoped to `frontend/` against the
+     API-client, context-state, theming, and no-secrets rules.
+6. `/risk-tier` — classifier proposes Low/Medium/High; **human** confirms or raises it.
+   The change sets the tier, not the author.
+7. Commit + push; CI is the floor. High tier ⇒ the author reads the diff and the
+   evidence (test output), not just "green".
 
-## Common Tasks
+Reviewers are pinned agents (`.github/agents/`); what failure looks like here is
+`REVIEW.md`.
 
-### Adding a new API endpoint
-1. Create or update handler in `pkg/handlers/`
-2. Add route in `pkg/router/`
-3. Add authentication middleware if needed
-4. Write tests for the handler
-5. Update API documentation if it exists
+## Resources
 
-### Adding a new database model
-1. Define struct in `pkg/models/`
-2. Create migration in `db/migrations/`
-3. Add CRUD operations in appropriate handler
-4. Write tests for database operations
-
-### Working with metadata
-- Use `pkg/metadata` package for audio file processing
-- Integrate with MusicBrainz for enhanced metadata
-- Handle missing or incorrect metadata gracefully
-
-## Dependencies
-
-### Go Dependencies
-- `github.com/go-chi/chi/v5`: HTTP router
-- `github.com/jackc/pgx/v4`: PostgreSQL driver
-- `github.com/golang-jwt/jwt/v5`: JWT authentication
-- `github.com/dhowden/tag`: Audio metadata extraction
-- `github.com/michiwend/gomusicbrainz`: MusicBrainz API client
-- `github.com/stretchr/testify`: Testing utilities
-
-### Python Dependencies (Audio Processor)
-- FastAPI: Web framework
-- Essentia: Audio analysis library
-- Management via `pyproject.toml`
-
-## Running the Application
-
-### Local Development
-1. Set up PostgreSQL database
-2. Copy `.env.example` to `.env` and configure
-3. Build and run audio processor: `docker-compose up audio-processor`
-4. Run the Go server: `go run cmd/server/main.go`
-
-### Docker Deployment
-- Use `docker-compose.yml` for complete stack deployment
-- Includes PostgreSQL, Go server, and audio processor
-
-## Important Notes
-
-- Never ever start coding without sharing your plan and getting approval
-- Always validate user input before processing
-- Handle file uploads securely (validate file types, limit sizes)
-- Use prepared statements for all database queries
-- Log errors appropriately but don't expose sensitive information to clients
-- The project uses Go 1.24.3
-- Database migrations run automatically on server startup
-- Audio files are stored on disk, with metadata in PostgreSQL
+- Local run: configure `.env` (see `.env.example`), `docker compose up audio-processor`,
+  then `go run cmd/server/main.go`.
+- Key env: `DATABASE_URL` (or `DB_HOST`/`DB_PORT`/`POSTGRES_*`), `JWT_SECRET` (required,
+  non-default), `PORT`, `AUDIO_PROCESSOR_URL`, `MINIO_*`, `CORS_ALLOWED_ORIGINS`,
+  `ALLOW_REGISTRATION`, `TIDAL_CLIENT_ID`/`TIDAL_CLIENT_SECRET`.

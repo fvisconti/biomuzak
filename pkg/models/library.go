@@ -7,9 +7,10 @@ import (
 
 // LibrarySong represents a song in the user's library, including the user's rating
 type LibrarySong struct {
-	ID              int           `json:"id"`
-	FingerprintHash string        `json:"fingerprint_hash"`
-	FilePath        string        `json:"file_path"`
+	ID int `json:"id"`
+	// Server-internal fields — never serialized to clients (see models.Song).
+	FingerprintHash string        `json:"-"`
+	FilePath        string        `json:"-"`
 	Title           string        `json:"title"`
 	Artist          string        `json:"artist"`
 	Album           string        `json:"album"`
@@ -21,4 +22,12 @@ type LibrarySong struct {
 	FileSize        int64         `json:"file_size"`
 	LastModified    time.Time     `json:"last_modified"`
 	Rating          sql.NullInt64 `json:"rating"`
+}
+
+// VirtualAlbum represents an album grouped from songs
+type VirtualAlbum struct {
+	Name      string `json:"name"`
+	Artist    string `json:"artist"`
+	SongCount int    `json:"song_count"`
+	Year      int    `json:"year,omitempty"`
 }

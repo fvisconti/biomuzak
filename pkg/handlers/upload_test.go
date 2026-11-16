@@ -17,7 +17,7 @@ type mockProcessor struct {
 	LastFilePath     string
 }
 
-func (m *mockProcessor) ProcessFile(filePath string) error {
+func (m *mockProcessor) ProcessFile(filePath string, userID int, playlistID int) error {
 	m.ProcessFileCalls++
 	m.LastFilePath = filePath
 	return nil
@@ -51,7 +51,7 @@ func TestProcessDirectory(t *testing.T) {
 	supportedFile2.Close()
 
 	// 2. Execute
-	handler.processDirectory(tempDir, processor)
+	handler.processDirectory(tempDir, processor, 1, 0)
 
 	// 3. Assert
 	assert.Equal(t, 2, mockProc.ProcessFileCalls, "ProcessFile should be called for two supported files")

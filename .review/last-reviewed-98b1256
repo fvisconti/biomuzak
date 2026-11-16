@@ -1,0 +1,3 @@
+reviewed: 98b1256 (working tree vs fb39f9e)
+reviews: Code Reviewer (pre-pr, 2 IMPORTANT + 3 SUGGESTION, all fixed), Security Reviewer (clear, 2 SUGGESTION, both fixed), Risk Classifier (High, confirmed)
+gate: go build/vet/test -race green

@@ -1,15 +1,109 @@
 package metadata
 
 import (
+	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"go-postgres-example/pkg/config"
+	"go-postgres-example/pkg/models"
+	"go-postgres-example/pkg/storage"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
+
+	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/stretchr/testify/assert"
 )
+
+type MockStorage struct {
+	UploadFileCalls int
+	LastObjectKey   string
+	// StreamData is returned by GetFileStream, so code paths that read a
+	// stored object (e.g. GenerateEmbeddingForSong) get real bytes.
+	StreamData []byte
+	// E4 object-tag capture.
+	TaggedObjects map[string]map[string]string
+	TagErr        error
+}
+
+func (m *MockStorage) TagObject(ctx context.Context, objectName string, tags map[string]string) error {
+	if m.TaggedObjects == nil {
+		m.TaggedObjects = map[string]map[string]string{}
+	}
+	m.TaggedObjects[objectName] = tags
+	return m.TagErr
+}
+
+func (m *MockStorage) GetObjectTags(ctx context.Context, objectName string) (map[string]string, error) {
+	if m.TaggedObjects == nil {
+		return nil, nil
+	}
+	return m.TaggedObjects[objectName], nil
+}
+
+func (m *MockStorage) UploadFile(ctx context.Context, objectName string, reader io.Reader, objectSize int64, contentType string) error {
+	m.UploadFileCalls++
+	m.LastObjectKey = objectName
+	return nil
+}
+
+func (m *MockStorage) GetFileStream(ctx context.Context, objectName string) (storage.ReadSeekCloser, error) {
+	return &bytesReadSeekCloser{r: bytes.NewReader(m.StreamData)}, nil
+}
+
+type bytesReadSeekCloser struct{ r *bytes.Reader }
+
+func (b *bytesReadSeekCloser) Read(p []byte) (int, error) { return b.r.Read(p) }
+func (b *bytesReadSeekCloser) Seek(offset int64, whence int) (int64, error) {
+	return b.r.Seek(offset, whence)
+}
+func (b *bytesReadSeekCloser) Close() error { return nil }
+
+func (m *MockStorage) GetPresignedURL(ctx context.Context, objectName string, expires time.Duration) (*url.URL, error) {
+	return nil, nil
+}
+
+func (m *MockStorage) DeleteObject(ctx context.Context, objectName string) error {
+	return nil
+}
+
+// E4: uploaded objects carry genre/artist as MinIO object tags.
+func TestTagSongObject_SetsGenreAndArtist(t *testing.T) {
+	ps := &MockStorage{}
+	p := &Processor{Storage: ps}
+
+	p.tagSongObject("abc123.flac", &models.Song{Artist: "DJ Test"}, "Deep House")
+
+	assert.Equal(t, map[string]string{"genre": "Deep House", "artist": "DJ Test"},
+		ps.TaggedObjects["abc123.flac"])
+}
+
+func TestTagSongObject_TagFailureNotFatal(t *testing.T) {
+	ps := &MockStorage{TagErr: errors.New("minio down")}
+	p := &Processor{Storage: ps}
+
+	// Must log and return, not panic or propagate.
+	p.tagSongObject("abc123.flac", &models.Song{Artist: "A"}, "G")
+}
+
+func TestTagSongObject_EmptyGenreOmitted(t *testing.T) {
+	ps := &MockStorage{}
+	p := &Processor{Storage: ps}
+
+	p.tagSongObject("abc123.flac", &models.Song{Artist: "A"}, "")
+
+	assert.Equal(t, map[string]string{"artist": "A"}, ps.TaggedObjects["abc123.flac"])
+}
 
 func TestGenerateFileHash(t *testing.T) {
 	// Create a temporary test file in a temporary directory
@@ -47,37 +141,34 @@ func TestMoveToUploadDir(t *testing.T) {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
 
-	// Create a processor with test config
+	// Create a mock storage
+	mockStorage := &MockStorage{}
+
+	// Create a processor with test config and mock storage
 	cfg := &config.Config{
 		UploadDir: uploadDir,
 	}
-	p := &Processor{Cfg: cfg}
+	p := &Processor{Cfg: cfg, Storage: mockStorage}
 
 	// Test moving the file
 	testHash := "testhash123"
-	permanentPath, err := p.moveToUploadDir(testFile, testHash)
+	objectKey, err := p.moveToUploadDir(testFile, testHash)
 	if err != nil {
 		t.Fatalf("moveToUploadDir() returned error: %v", err)
 	}
 
-	// Verify the permanent path is correct
-	expectedPath := filepath.Join(uploadDir, testHash+".mp3")
-	if permanentPath != expectedPath {
-		t.Errorf("moveToUploadDir() returned path %q, want %q", permanentPath, expectedPath)
+	// Verify the object key is correct
+	expectedKey := testHash + ".mp3"
+	if objectKey != expectedKey {
+		t.Errorf("moveToUploadDir() returned key %q, want %q", objectKey, expectedKey)
 	}
 
-	// Verify the file exists at the new location
-	if _, err := os.Stat(permanentPath); os.IsNotExist(err) {
-		t.Errorf("File was not moved to permanent location: %v", err)
+	// Verify UploadFile was called
+	if mockStorage.UploadFileCalls != 1 {
+		t.Errorf("Expected UploadFile to be called once, got %d", mockStorage.UploadFileCalls)
 	}
-
-	// Verify the file content is correct
-	movedContent, err := os.ReadFile(permanentPath)
-	if err != nil {
-		t.Fatalf("Failed to read moved file: %v", err)
-	}
-	if string(movedContent) != string(testContent) {
-		t.Errorf("Moved file content mismatch: got %q, want %q", movedContent, testContent)
+	if mockStorage.LastObjectKey != expectedKey {
+		t.Errorf("Expected UploadFile to be called with key %q, got %q", expectedKey, mockStorage.LastObjectKey)
 	}
 }
 
@@ -118,7 +209,7 @@ func TestGetEmbeddingsFromService(t *testing.T) {
 	p := &Processor{Cfg: cfg}
 
 	// Test getting embeddings
-	embedding, err := p.getEmbeddingsFromService(testFile)
+	embedding, err := p.getEmbeddingsFromService(context.Background(), testFile)
 	if err != nil {
 		t.Fatalf("getEmbeddingsFromService() returned error: %v", err)
 	}
@@ -175,7 +266,7 @@ func TestGetEmbeddingsFromService_ErrorHandling(t *testing.T) {
 			}
 			p := &Processor{Cfg: cfg}
 
-			_, err := p.getEmbeddingsFromService(testFile)
+			_, err := p.getEmbeddingsFromService(context.Background(), testFile)
 			if tt.expectError && err == nil {
 				t.Errorf("Expected error but got none")
 			}
@@ -184,4 +275,178 @@ func TestGetEmbeddingsFromService_ErrorHandling(t *testing.T) {
 			}
 		})
 	}
+}
+
+// embedding768String builds the pgvector text form of a 768-dim vector filled
+// with val — the exact string db.SaveSongEmbedding sends as $2.
+func embedding768String(val float64) string {
+	s := strconv.FormatFloat(val, 'f', -1, 64)
+	return "[" + strings.TrimSuffix(strings.Repeat(s+",", 768), ",") + "]"
+}
+
+// TestGenerateEmbeddingForSong covers the cold-start backfill's per-song
+// pipeline: fetch file path, stream audio from storage, call the audio
+// processor, and persist the embedding.
+//
+// Objective: GenerateEmbeddingForSong succeeds and saves a 768-dim embedding,
+// and surfaces errors without writing to the DB on any failure.
+//
+// Given-When-Then: Given a mocked DB/storage/audio-processor, When the song
+// pipeline runs, Then the INSERT executes only on a valid 38-dim response,
+// and errors (processor down, wrong width) fail before the save.
+//
+// Edge cases: a non-768-dim processor response is rejected by the db
+// dimension guard (no SQL); a nil DB/stream is never reached because
+// GetSongFilePath errors first.
+func TestGenerateEmbeddingForSong(t *testing.T) {
+	embeddingJSON := `[` + strings.TrimSuffix(strings.Repeat("0.5,", 768), ",") + `]`
+	tests := []struct {
+		name         string
+		serverFunc   http.HandlerFunc
+		expectSave   bool
+		expectErrSub string
+	}{
+		{
+			name: "happy path saves 768-dim embedding",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"embedding": `+embeddingJSON+`}`)
+			},
+			expectSave: true,
+		},
+		{
+			name: "processor failure returns error, no save",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "essentia exploded", http.StatusInternalServerError)
+			},
+			expectErrSub: "failed to generate embedding",
+		},
+		{
+			name: "wrong-width embedding rejected before SQL",
+			serverFunc: func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"embedding": [1,2,3]}`)
+			},
+			expectErrSub: "dimension",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(tt.serverFunc)
+			defer server.Close()
+
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("failed to create mock: %v", err)
+			}
+			defer db.Close()
+
+			mock.ExpectQuery(`SELECT file_path FROM songs WHERE id = \$1`).
+				WithArgs(42).
+				WillReturnRows(sqlmock.NewRows([]string{"file_path"}).AddRow("songs/42.mp3"))
+			if tt.expectSave {
+				mock.ExpectExec(`INSERT INTO song_embeddings`).
+					WithArgs(42, embedding768String(0.5)).
+					WillReturnResult(sqlmock.NewResult(1, 1))
+			}
+
+			store := &MockStorage{StreamData: []byte("fake audio bytes")}
+			cfg := &config.Config{AudioProcessorURL: server.URL}
+			p := &Processor{DB: db, Cfg: cfg, Storage: store,
+				httpClient: &http.Client{Timeout: 5 * time.Second}}
+
+			err = p.GenerateEmbeddingForSong(context.Background(), 42)
+			if tt.expectErrSub != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.expectErrSub) {
+					t.Fatalf("GenerateEmbeddingForSong() error = %v, want substring %q", err, tt.expectErrSub)
+				}
+			} else if err != nil {
+				t.Fatalf("GenerateEmbeddingForSong() unexpected error: %v", err)
+			}
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// minimalID3MP3 builds a minimal MP3 file: an ID3v2.3 tag with title and
+// artist, and no audio frames. dhowden/tag parses the tag fine.
+func minimalID3MP3(title, artist string) []byte {
+	id3Text := func(id, text string) []byte {
+		data := append([]byte{0x00}, append([]byte(text), 0x00)...)
+		frame := make([]byte, 10)
+		copy(frame, id)
+		n := len(data)
+		frame[4] = byte(n >> 24)
+		frame[5] = byte(n >> 16)
+		frame[6] = byte(n >> 8)
+		frame[7] = byte(n)
+		return append(frame, data...)
+	}
+	frames := append(id3Text("TIT2", title), id3Text("TPE1", artist)...)
+	size := len(frames)
+	header := []byte{'I', 'D', '3', 0x03, 0x00, 0x00,
+		byte(size >> 21), byte(size >> 14 & 0x7f), byte(size >> 7 & 0x7f), byte(size & 0x7f)}
+	return append(header, frames...)
+}
+
+// E4 wiring: a fresh upload must tag the stored object with genre + artist
+// (the step-8b call in ProcessFile).
+func TestProcessFile_TagsObjectWithGenreAndArtist(t *testing.T) {
+	dir := t.TempDir()
+	// Put the file in a folder whose name will not trigram-match any genre.
+	songDir := filepath.Join(dir, "incoming")
+	if err := os.Mkdir(songDir, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	filePath := filepath.Join(songDir, "test.mp3")
+	if err := os.WriteFile(filePath, minimalID3MP3("Test Song", "Test Artist"), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Audio processor: fail — embedding is an enhancement, must not fail.
+	proc := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusInternalServerError)
+	}))
+	defer proc.Close()
+
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(`SELECT id FROM songs WHERE fingerprint_hash = \$1`).
+		WithArgs(sqlmock.AnyArg()).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectQuery(`INSERT INTO genres \(name\) VALUES \(\$1\) ON CONFLICT \(name\) DO NOTHING RETURNING id`).
+		WithArgs("Deep House").
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(7))
+	mock.ExpectQuery(`INSERT INTO songs \(`).
+		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(42))
+	mock.ExpectExec(`INSERT INTO user_songs`).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	ms := &MockStorage{}
+	cfg := &config.Config{AudioProcessorURL: proc.URL}
+	p := &Processor{
+		DB:      db,
+		Cfg:     cfg,
+		Storage: ms,
+		MBClient: &MockMusicBrainzClient{
+			GetArtistGenresFunc: func(artist string) ([]string, error) { return []string{"Deep House"}, nil },
+		},
+	}
+
+	if err := p.ProcessFile(filePath, 1, 0); err != nil {
+		t.Fatalf("ProcessFile: %v", err)
+	}
+
+	key := ms.LastObjectKey
+	if key == "" || !strings.HasSuffix(key, ".mp3") {
+		t.Fatalf("expected an .mp3 object key, got %q", key)
+	}
+	assert.Equal(t, map[string]string{"genre": "Deep House", "artist": "Test Artist"},
+		ms.TaggedObjects[key])
+	assert.NoError(t, mock.ExpectationsWereMet())
 }

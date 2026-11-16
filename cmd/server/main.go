@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"go-postgres-example/pkg/handlers"
@@ -8,10 +9,15 @@ import (
 	"go-postgres-example/pkg/subsonic"
 	"log"
 	"net/http"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
 
 	"go-postgres-example/pkg/auth"
 	"go-postgres-example/pkg/config"
 	"go-postgres-example/pkg/db"
+	"go-postgres-example/pkg/storage"
 )
 
 func main() {
@@ -21,6 +27,30 @@ func main() {
 		log.Fatal("DATABASE_URL is not set")
 	}
 
+	// Refuse to start with the insecure default JWT secret: anyone could forge
+	// valid tokens and impersonate any user.
+	// Reject every known placeholder so a forgotten .env cannot silently
+	// weaken the whole auth scheme (JWT signing and the derived Subsonic
+	// tokens both hang on this secret).
+	for _, forbidden := range []string{
+		"", "default-secret", "default-secret-change-in-production",
+		"your-super-secret-jwt-key-change-in-production", "secret", "changeme",
+	} {
+		if strings.EqualFold(strings.TrimSpace(cfg.JWTSecret), forbidden) {
+			log.Fatal("JWT_SECRET must be set to a strong, unique value (known defaults are not allowed)")
+		}
+	}
+	if len(cfg.JWTSecret) < 16 {
+		log.Fatal("JWT_SECRET must be at least 16 characters")
+	}
+
+	// Object-storage credentials are secrets: there is no meaningful default
+	// (directive 3). Missing MINIO_ACCESS_KEY / MINIO_SECRET_KEY fail fast at
+	// boot instead of silently trying well-known credentials.
+	if cfg.MinIOAccessKey == "" || cfg.MinIOSecretKey == "" {
+		log.Fatal("MINIO_ACCESS_KEY and MINIO_SECRET_KEY are required")
+	}
+
 	// Connect to the database
 	conn, err := db.NewConnection(cfg.DatabaseURL)
 	if err != nil {
@@ -28,23 +58,21 @@ func main() {
 	}
 	defer conn.Close()
 
-	// Run migrations
-	exists, terr := tableExists(conn, "users")
-	if terr != nil {
-		log.Fatalf("Failed checking tables: %v", terr)
+	// Initialize storage
+	minioStorage, err := storage.NewMinIOStorage(
+		cfg.MinIOEndpoint,
+		cfg.MinIOAccessKey,
+		cfg.MinIOSecretKey,
+		cfg.MinIOBucket,
+		cfg.MinIOUseSSL,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize storage: %v", err)
 	}
-	if !exists {
-		if err = db.Migrate(conn, "db/migrations/0001_initial_schema.sql"); err != nil {
-			log.Fatalf("Failed to run migration 0001: %v", err)
-		}
-	} else {
-		log.Println("Skipping 0001_initial_schema.sql (users table exists)")
-	}
-	if err = db.Migrate(conn, "db/migrations/0002_enable_pg_trgm.sql"); err != nil {
-		log.Fatalf("Failed to run migration 0002: %v", err)
-	}
-	if err = db.Migrate(conn, "db/migrations/0003_add_is_admin.sql"); err != nil {
-		log.Fatalf("Failed to run migration 0003: %v", err)
+
+	// Run migrations in explicit version order
+	if err = db.MigrateAll(conn, "db/migrations"); err != nil {
+		log.Fatalf("Failed to run migrations: %v", err)
 	}
 
 	// Ensure an admin user exists on first deployment
@@ -53,20 +81,57 @@ func main() {
 	}
 
 	// Initialize handlers
-	authHandler := handlers.NewAuthHandler(conn, cfg)
-	uploadHandler := handlers.NewUploadHandler(conn, cfg)
-	libraryHandler := handlers.NewLibraryHandler(conn, cfg)
-	playlistHandler := handlers.NewPlaylistHandler(conn, cfg)
-	songHandler := handlers.NewSongHandler(conn, cfg)
-	subsonicHandler := subsonic.NewHandler(conn, cfg)
+	authHandler := handlers.NewAuthHandler(conn, cfg, minioStorage)
+	uploadHandler := handlers.NewUploadHandler(conn, cfg, minioStorage)
+	libraryHandler := handlers.NewLibraryHandler(conn, cfg, minioStorage)
+	playlistHandler := handlers.NewPlaylistHandler(conn, cfg, minioStorage)
+	songHandler := handlers.NewSongHandler(conn, cfg, minioStorage)
+	streamHandler := handlers.NewStreamHandler(conn, cfg, minioStorage)
+	tidalHandler := handlers.NewTidalHandler(conn, cfg, minioStorage)
+	exportHandler := handlers.NewExportHandler(conn, cfg, minioStorage, cfg.ExportConcurrency)
+	backfillHandler := handlers.NewBackfillHandler(conn, cfg, minioStorage)
+	genreHandler := handlers.NewGenreHandler(conn)
 
-	// Initialize router
-	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, subsonicHandler)
+	// Initialize the Subsonic handler
+	subsonicHandler := subsonic.NewHandler(conn, cfg, minioStorage)
 
-	// Start server
+	// Initialize the router
+	r := router.New(authHandler, uploadHandler, libraryHandler, playlistHandler, songHandler, streamHandler, subsonicHandler, tidalHandler, exportHandler, backfillHandler, genreHandler, cfg.CORSAllowedOrigins)
+
+	// Start server with explicit timeouts to mitigate Slowloris and
+	// connection-exhaustion attacks.
+	srv := &http.Server{
+		Addr:              fmt.Sprintf(":%s", cfg.Port),
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      10 * time.Minute, // generous: large downloads/streams
+		IdleTimeout:       2 * time.Minute,
+	}
 	log.Printf("Server starting on port %s", cfg.Port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), r); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+
+	// Graceful shutdown: on SIGINT/SIGTERM stop accepting connections, cancel
+	// any running backfill job (its detached goroutine needs a clear exit
+	// path), and let in-flight requests drain within a bounded timeout.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe() }()
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to start server: %v", err)
+		}
+	case <-ctx.Done():
+		log.Printf("Shutdown signal received; stopping server and cancelling backfill")
+		handlers.CancelBackfill()
+		shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancelShutdown()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
+		<-errCh // ListenAndServe returns http.ErrServerClosed
 	}
 }
 
@@ -81,7 +146,8 @@ func ensureAdminUser(conn *sql.DB, cfg *config.Config) error {
 	}
 
 	if cfg.AdminUsername == "" || cfg.AdminPassword == "" {
-		return fmt.Errorf("no users exist; please set ADMIN_USERNAME and ADMIN_PASSWORD in environment to bootstrap the initial admin user")
+		log.Printf("No admin credentials provided; skipping admin bootstrap")
+		return nil
 	}
 
 	// Hash password
@@ -97,14 +163,4 @@ func ensureAdminUser(conn *sql.DB, cfg *config.Config) error {
 	}
 	log.Printf("Bootstrap admin user '%s' created", cfg.AdminUsername)
 	return nil
-}
-
-// tableExists checks whether a table exists in the public schema
-func tableExists(conn *sql.DB, table string) (bool, error) {
-	var exists bool
-	err := conn.QueryRow(`SELECT EXISTS (
-		SELECT FROM information_schema.tables 
-		WHERE table_schema = 'public' AND table_name = $1
-	)`, table).Scan(&exists)
-	return exists, err
 }

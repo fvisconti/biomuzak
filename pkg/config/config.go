@@ -27,15 +27,42 @@ type Config struct {
 	MusicBrainzEmail string
 
 	// Upload & Audio Processing
-	UploadDir          string
-	AudioProcessorURL  string
+	UploadDir         string
+	AudioProcessorURL string
 
 	// Registration & bootstrap
 	AllowRegistration bool
 	AdminUsername     string
 	AdminPassword     string
 	AdminEmail        string
+
+	// MinIO Configuration
+	MinIOEndpoint  string
+	MinIOAccessKey string
+	MinIOSecretKey string
+	MinIOBucket    string
+	MinIOUseSSL    bool
+
+	// CORS: comma-separated list of allowed origins. Empty means "allow all"
+	// (dev convenience); set it to the frontend origin(s) in production.
+	CORSAllowedOrigins string
+
+	// Tidal OAuth (Device Authorization flow)
+	TidalClientID     string
+	TidalClientSecret string
+
+	// Export concurrency: max parallel workers for the export job.
+	ExportConcurrency int
+
+	// SimilarSongsLimit: how many similar tracks to return for the playing song.
+	// Falls back to DefaultSimilarSongsLimit when unset or invalid.
+	SimilarSongsLimit int
 }
+
+// DefaultSimilarSongsLimit is the documented default for SIMILAR_SONGS_LIMIT
+// (.env.example, docs/DOCKER.md). Referenced by New() and by the similar-
+// songs handler's defensive clamp so the value is not duplicated.
+const DefaultSimilarSongsLimit = 3
 
 // New creates a new Config struct
 func New() *Config {
@@ -58,6 +85,21 @@ func New() *Config {
 		AdminUsername:     getEnv("ADMIN_USERNAME", ""),
 		AdminPassword:     getEnv("ADMIN_PASSWORD", ""),
 		AdminEmail:        getEnv("ADMIN_EMAIL", "admin@local"),
+
+		MinIOEndpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+		MinIOAccessKey: getEnv("MINIO_ACCESS_KEY", ""),
+		MinIOSecretKey: getEnv("MINIO_SECRET_KEY", ""),
+		MinIOBucket:    getEnv("MINIO_BUCKET", "music"),
+		MinIOUseSSL:    getEnv("MINIO_USE_SSL", "false") == "true",
+
+		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
+
+		TidalClientID:     getEnv("TIDAL_CLIENT_ID", ""),
+		TidalClientSecret: getEnv("TIDAL_CLIENT_SECRET", ""),
+
+		ExportConcurrency: getEnvInt("EXPORT_CONCURRENCY", 4),
+
+		SimilarSongsLimit: getEnvInt("SIMILAR_SONGS_LIMIT", DefaultSimilarSongsLimit),
 	}
 
 	// Prefer explicit DATABASE_URL if provided
@@ -95,6 +137,17 @@ func New() *Config {
 func getEnv(key, defaultValue string) string {
 	if value, exists := os.LookupEnv(key); exists {
 		return value
+	}
+	return defaultValue
+}
+
+// getEnvInt reads an integer environment variable or returns a default.
+func getEnvInt(key string, defaultValue int) int {
+	if value, exists := os.LookupEnv(key); exists {
+		var n int
+		if _, err := fmt.Sscanf(value, "%d", &n); err == nil && n > 0 {
+			return n
+		}
 	}
 	return defaultValue
 }
